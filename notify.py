@@ -1,6 +1,6 @@
 """Phone push alerts for Day Desk (added 2026-10-31).
 
-How it reaches the phone: ntfy (https://ntfy.sh). Free, no account, no API key, no bill. Jeff installs the "ntfy" app,
+How it reaches the phone: ntfy (https://ntfy.sh). Free, no account, no API key, no bill. tomahawkeer installs the "ntfy" app,
 taps +, and subscribes to the desk's topic (the page's Controls section shows it). The desk then sends a plain HTTP POST
 of text to https://ntfy.sh/<topic> with three headers: Title, Priority (1-5) and Tags. Python's own urllib, nothing
 installed. Ideas from freqtrade (rpc/webhook.py, per-event notification levels) and jesse (services/notifier.py,

@@ -1,4 +1,4 @@
-"""Proof of life for Day Desk (added 2026-10-29, Jeff: "build something into day desk to have it
+"""Proof of life for Day Desk (added 2026-10-29, tomahawkeer: "build something into day desk to have it
 let you know its working, or build in a response of some kind for you to use to test it").
 
 Three ways to tell whether the desk is alive, none of which needs anyone at the PC:
@@ -282,7 +282,7 @@ class Health:
         loop stops fetching, so a stale 'feed failing' must not ring the phone all night. Returns True if it alerted."""
         verdict = self.heartbeat(now)["verdict"]
         market = str(self.desk.status.get("market") or "")
-        bad = not verdict.startswith("WORKING:")
+        bad = not verdict.startswith("WORKING:") or "ATTENTION" in verdict   # 10-31: banners ring too
         if verdict.startswith("WORKING, PRICE FEED FAILING") and market.startswith("closed"):
             bad = False
         if not bad:
@@ -296,9 +296,13 @@ class Health:
         if self.problem_alerted or now - self.problem_since < mins * 60:
             return False
         self.problem_alerted = True
-        self.desk.alert("desk_problem", "Day Desk problem: " + verdict.split(":")[0],
-                        f"{verdict[:200]} (for {round((now - self.problem_since) / 60)} min). "
-                        "Check the RUN.bat window on the PC.")
+        mins_on = round((now - self.problem_since) / 60)
+        if verdict.startswith("WORKING:") and "ATTENTION" in verdict:
+            self.desk.alert("desk_problem", "Day Desk needs attention",
+                            f"{verdict.split('ATTENTION:', 1)[1].strip()[:300]} (for {mins_on} min)")
+        else:
+            self.desk.alert("desk_problem", "Day Desk problem: " + verdict.split(":")[0],
+                            f"{verdict[:200]} (for {mins_on} min). Check the RUN.bat window on the PC.")
         return True
 
     def tick(self, now: float | None = None) -> None:

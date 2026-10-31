@@ -1,0 +1,7 @@
+# Personal data stays on the PC: trades, decisions, prompts, alert topic, bars, logs
+data/
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+*.orig

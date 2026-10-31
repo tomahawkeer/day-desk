@@ -61,7 +61,8 @@ def fmt_playbook(lessons: list[dict] | None) -> str:
 
 def build_prompt(sym: str, reason: str, bars: list[dict], qqq: list[dict], news: list[str],
                  book_view: dict, max_shares: int, lessons: list[dict] | None = None,
-                 scores: list[dict] | None = None, research: dict | None = None, earlier_today: str = "") -> str:
+                 scores: list[dict] | None = None, research: dict | None = None, earlier_today: str = "",
+                 base_rates: str = "") -> str:
     last = bars[-1]["c"]
     # Noise yardstick (10-31): the stock's typical 1-minute high-low range today, so a stop can be judged in units
     # of normal wiggle instead of guessed. The trade lab measures every past stop the same way.
@@ -85,6 +86,7 @@ Stock: {sym}. Why you were woken: {reason}.
 {sym} last {last:.2f}, {pct(last, day_open):+.2f}% since the open, high {max(b['h'] for b in bars):.2f}, low {min(b['l'] for b in bars):.2f}, VWAP {vw:.2f}.
 Typical 1-minute range today: {noise:.2f}% (a stop {noise * 3:.2f}% away is about 3 normal one-minute wiggles).
 {earlier_today}
+{base_rates}
 {q_line}
 {pos_line}
 Account: cash ${book_view['cash']:,.2f}; other open positions: {others}; max shares you may buy now: {max_shares}.
@@ -131,7 +133,7 @@ what to change), "drop" (stop using it), or "needs more data" (too few trades to
 this). Say what that strategy taught you, citing its numbers. Do not call a strategy proven from a handful of trades.
 
 Reply with ONE JSON object and nothing else:
-{"summary": "<3-5 plain-English sentences on how today went and what you learned, for Jeff, who is not a trader>",
+{"summary": "<3-5 plain-English sentences on how today went and what you learned, for tomahawkeer, who is not a trader>",
  "strategies": [{"setup": "<name>", "verdict": "keep" | "adjust" | "drop" | "needs more data",
                  "note": "<what it taught you and, for adjust, the exact change>"}],
  "lessons": [{"id": "<R-number you are keeping, or new>", "rule": "<the rule>",
@@ -210,8 +212,11 @@ def parse_review(text: str) -> dict:
 
 
 RESEARCH_SYSTEM = """You are the pre-market researcher for a PAPER day-trading desk (long only, intraday, flat by
-3:45 PM ET, liquid US stocks and ETFs). It is a trading morning before the open. Use web search to find the 3 to 6
-stocks most worth WATCHING today for a possible long day trade, and say plainly why.
+3:45 PM ET, liquid US stocks and ETFs). The prompt names the session you are researching for: usually this morning,
+before the open; on a weekend or evening it is a PREVIEW of the next session (then "today" below means that session,
+and the search is for news since the last close and events scheduled before and during that session). Use web search
+to find the 3 to 6 stocks most worth WATCHING that session for a possible long day trade, and say plainly why.
+Always search: never answer from memory, and never skip the search because the market is closed right now.
 
 Look for: pre-market movers with a real, fresh catalyst (earnings, guidance, upgrades/downgrades, FDA, contracts,
 M&A, big product news), unusual pre-market volume, and sector or theme momentum. Check the backdrop too: index
@@ -219,7 +224,7 @@ futures, and scheduled events today with their Eastern times (economic data, Fed
 the bell). Skip: stocks under $5, thinly traded names (roughly under 1 million shares a day), and anything with no
 identifiable catalyst. A stock gapping DOWN on bad news can still be worth watching for a long bounce, but say so.
 Prefer quality of reasoning over quantity; cite where each catalyst came from. Keep it to about 15 searches.
-If the US stock market is closed today (holiday), say so and return no picks.
+If the US stock market is closed on the session date (a holiday), say so and return no picks.
 
 Reply with ONE JSON object and nothing else:
 {"backdrop": "<2-4 plain-English sentences: futures, mood, today's scheduled events with ET times>",
@@ -338,7 +343,7 @@ def find_claude_cli() -> str | None:
 
 # WHERE "claude -p" RUNS (2026-10-31). Claude Code reads every CLAUDE.md in the folder it starts in AND in every
 # folder above it, and adds them to the prompt. If it started in this program's folder it would read Day Desk's own
-# CLAUDE.md on every call, and once Day Desk moved inside %USERPROFILE%\daytrading-bot (Jeff, 10-31) it would also
+# CLAUDE.md on every call, and once Day Desk moved inside %USERPROFILE%\daytrading-bot (tomahawkeer, 10-31) it would also
 # read the closed bot's 13 KB working agreement: thousands of wasted tokens on up to max_calls_per_day calls, plus
 # rules about a different program leaking into trading decisions. So every call starts in an EMPTY folder under the
 # system temp directory, which has no project above it. The prompt we send already carries everything a call needs.
@@ -370,21 +375,23 @@ def unwrap_cli_json(out: str) -> tuple[str, dict | None]:
              "tok_out": int(u.get("output_tokens") or 0),
              "cost_usd": round(float(o.get("total_cost_usd") or 0), 5),
              "secs": round((o.get("duration_ms") or 0) / 1000, 1), "turns": o.get("num_turns"),
+             # NOT reliable for Claude Code's own WebSearch tool: a 10-31 research run that clearly searched (20 turns,
+             # sourced picks) reported 0 here. Use "turns" > 1 as the did-it-use-tools signal.
              "searches": int(((u.get("server_tool_use") or {}).get("web_search_requests")) or 0)}
     return str(o["result"]), usage
 
 
 class ClaudeCLIBrain:
-    """Asks Claude through Claude Code on this PC ("claude -p"), which runs on Jeff's
+    """Asks Claude through Claude Code on this PC ("claude -p"), which runs on tomahawkeer's
     Claude SUBSCRIPTION login. There is no API key anywhere in this program, and any
     ANTHROPIC_API_KEY in the environment is REMOVED before the call, because if that
     variable were set Claude Code would bill the API account instead of the plan."""
 
     def __init__(self, exe: str, model: str, timeout_s: int = 150, lean: dict | None = None):
         self.exe, self.model, self.timeout_s = exe, model, timeout_s
-        # LEAN MODE (10-31, config "claude_lean"). A one-line health check measured 429,398 input tokens on Jeff's
+        # LEAN MODE (10-31, config "claude_lean"). A one-line health check measured 429,398 input tokens on tomahawkeer's
         # PC: Claude Code was loading its whole interactive context (connectors/MCP servers, skills, memory files,
-        # its coding system prompt) into every desk call. --bare would fix it but needs an API key, which Jeff's rule
+        # its coding system prompt) into every desk call. --bare would fix it but needs an API key, which tomahawkeer's rule
         # forbids, so the lean switches below keep the subscription login and strip the rest. TOKEN_PROBE.bat
         # measured each one before it was turned on.
         self.lean = lean or {}
@@ -392,7 +399,7 @@ class ClaudeCLIBrain:
 
     def last_usage(self) -> dict | None:
         """What the most recent call ON THIS THREAD cost: tokens and the API-equivalent dollars Claude Code
-        reports. Jeff pays nothing extra (subscription); the dollars are just the best single yardstick of how
+        reports. tomahawkeer pays nothing extra (subscription); the dollars are just the best single yardstick of how
         much plan usage a call ate. None if the CLI didn't report it."""
         return getattr(self._tl, "usage", None)
 
@@ -420,7 +427,7 @@ class ClaudeCLIBrain:
             full = system + "\n\n---\n\n" + prompt + "\n\nAnswer with the JSON object only. " + tail
         # --tools "" = no tools at all for trading calls (fast, light on usage); research gets web search only.
         # JSON output (10-31): same answer text in "result", plus the call's token usage and cost, so every
-        # call's share of Jeff's plan is logged instead of guessed from weekly % readings.
+        # call's share of tomahawkeer's plan is logged instead of guessed from weekly % readings.
         args = [self.exe, "-p", "--output-format", "json", "--model", model or self.model, "--tools", tools]
         if tools:
             args += ["--allowedTools"] + tools.split(",")

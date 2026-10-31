@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from engine import BAR_SECONDS, Book, ET, et_now, limits_problems, minutes_et, hm, scorecard
 from scanner import scan, Cooldowns
@@ -110,6 +110,35 @@ class Desk:
         self.cool.lock(sym, until, why)
         self.record({"t": tr["exit_t"], "sym": sym, "trigger": "re-entry lock", "action": "-", "result": why})
 
+    # ---------- Claude can't be reached (10-31) ----------
+    # Anthropic's docs say --bare "will become the default for -p in a future release", and --bare ignores the
+    # subscription login. If that ships, every desk call fails with "Not logged in". Without this the desk would sit
+    # there all day answering nothing while the page looked normal. Now: the first login-type failure, or
+    # claude_fail_alert_after failures in a row of any kind, puts a red banner on the page and ATTENTION in the
+    # heartbeat; Health.watch_problem then rings the phone once (after desk_problem_minutes). A good call clears it.
+    LOGIN_WORDS = ("not logged in", "/login", "please run /login", "authentication", "unauthorized", "401",
+                   "invalid api key", "oauth", "credit balance")
+
+    def note_claude_result(self, ok: bool, err: str = "", now: float | None = None) -> None:
+        now = now or time.time()
+        tag = "CLAUDE CAN'T BE REACHED"
+        if ok:
+            self.claude_fails = 0
+            if any(a.startswith(tag) for a in self.alerts):
+                self.alerts = [a for a in self.alerts if not a.startswith(tag)]
+                log.info("Claude calls are working again")
+            return
+        self.claude_fails = getattr(self, "claude_fails", 0) + 1
+        login = any(w in err.lower() for w in self.LOGIN_WORDS)
+        n = int((self.cfg.get("alerts") or {}).get("claude_fail_alert_after", 3))
+        if not (login or self.claude_fails >= n) or any(a.startswith(tag) for a in self.alerts):
+            return
+        why = ("Claude Code says it is not logged in. Open a terminal on the PC, run claude, sign in with your "
+               "subscription (NOT an API key), then restart RUN.bat." if login else
+               f"{self.claude_fails} Claude calls failed in a row.")
+        self.alerts = self.alerts + [f"{tag}: {why} Last error: {err[:160]}"]
+        log.warning("%s: %s", tag, err[:300])     # the heartbeat thread rings the phone (one loud alert per episode)
+
     def startup_checks(self) -> list[str]:
         """10-31 guards (code reviews of hummingbot/nautilus): frozen money limits unchanged, cash reconciles with the
         trade history, no position left 'open' that was already sold. A changed limit PAUSES new buys."""
@@ -159,31 +188,61 @@ class Desk:
         r = self.research()
         return r if r.get("day") == et_now(now).date().isoformat() else None
 
+    def research_session(self, now: float) -> tuple[str, bool]:
+        """Which trading session a research run is for: (date, is_preview). Before 4 PM on a weekday the desk
+        trades, it is today. Otherwise (weekend, evening, a no-trade day) it is a PREVIEW of the next weekday the
+        desk trades. Added 10-31: on Saturday the research saw "market closed", ran no searches and returned nothing,
+        so a weekend run could never prove the web search works. Full market holidays still answer "closed"."""
+        d = et_now(now).date()
+        skip = self.cfg.get("no_trade_days") or {}
+        if d.weekday() < 5 and minutes_et(now) < 16 * 60 and d.isoformat() not in skip:
+            return d.isoformat(), False
+        for _ in range(14):
+            d += timedelta(days=1)
+            if d.weekday() < 5 and d.isoformat() not in skip:
+                break
+        return d.isoformat(), True
+
     def run_research(self, now: float, sync: bool = False) -> str:
         """Pre-market news research through Claude Code (web search only). Runs in the background
-        so prices, stops and the page keep working while it reads."""
+        so prices, stops and the page keep working while it reads. On a weekend or evening it is a PREVIEW of the
+        next session: same call, saved under that session's date, never auto-adds (the 8:45 run that morning
+        replaces it and does the auto-add)."""
         if self.brain is None:
             return "Claude Code not found"
         if self.research_running:
             return "already running"
         self.research_running = True
-        day = et_now(now).date().isoformat()
+        day, preview = self.research_session(now)
 
         def work():
             try:
-                prompt = (f"Today is {et_now(now).strftime('%A %B %d, %Y')}, {hm(now)} ET. "
-                          f"Current watchlist: {', '.join(self.watchlist())}. "
-                          f"Find today's best stocks to watch for a long day trade.")
+                when = f"It is {et_now(now).strftime('%A %B %d, %Y')}, {hm(now)} ET. "
+                if preview:
+                    nice = datetime.fromisoformat(day).strftime("%A %B %d, %Y")
+                    prompt = (when + f"The US market is closed right now. This is a PREVIEW for the next session, "
+                              f"{nice}: search for news since the last close and for that session's scheduled events, "
+                              f"and find the best stocks to watch that day for a long day trade. "
+                              f"Current watchlist: {', '.join(self.watchlist())}.")
+                else:
+                    prompt = (when + f"Current watchlist: {', '.join(self.watchlist())}. "
+                              f"Find today's best stocks to watch for a long day trade.")
                 rv = self.brain.research(prompt, self.cfg.get("research_model"))
-                out = {"day": day, "t": time.time(), "status": "done", **rv}
+                self.note_claude_result(True)
+                out = {"day": day, "t": time.time(), "status": "done", "preview": preview, **rv}
                 rec = {"t": time.time(), "sym": "-", "trigger": "morning research", "action": "research",
-                       "why": rv["backdrop"], "result": "picks: " + (", ".join(p["ticker"] for p in rv["picks"]) or "none"),
-                       "usage": self.call_usage()}
-                added = self.apply_auto_picks(day, rv["picks"])
+                       "why": rv["backdrop"], "result": ("PREVIEW for " + day + " · " if preview else "") +
+                       "picks: " + (", ".join(p["ticker"] for p in rv["picks"]) or "none"),
+                       "usage": self.call_usage(), "preview": preview}
+                u = rec["usage"] or {}
+                if not u.get("searches") and (u.get("turns") or 0) <= 1:
+                    rec["result"] += " · WARNING: no web search was made"
+                added = [] if preview else self.apply_auto_picks(day, rv["picks"])
                 if added:
                     rec["result"] += " · auto-added (high conviction): " + ", ".join(added)
-                self.alert_research(rv["picks"], added)
+                self.alert_research(rv["picks"], added, preview)
             except Exception as e:
+                self.note_claude_result(False, str(e))
                 out = {"day": day, "t": time.time(), "status": f"failed: {e}"[:300], "backdrop": "", "picks": []}
                 rec = {"t": time.time(), "sym": "-", "trigger": "morning research", "action": "error",
                        "result": out["status"]}
@@ -201,9 +260,9 @@ class Desk:
         return "started"
 
     def apply_auto_picks(self, day: str, picks: list[dict]) -> list[str]:
-        """Jeff 10-28: 'You have permission if any pick ever looks to be prime to be profitable for that day.'
+        """tomahawkeer 10-28: 'You have permission if any pick ever looks to be prime to be profitable for that day.'
         High-conviction picks join the watchlist for the day; yesterday's auto-adds come off again unless still held
-        or picked high again. Tickers Jeff added himself are never removed."""
+        or picked high again. Tickers tomahawkeer added himself are never removed."""
         mode = self.cfg.get("auto_add_picks", "high")
         if mode in (False, "off", None):
             return []
@@ -228,7 +287,7 @@ class Desk:
         return added
 
     # ---------- grading the research (10-30) ----------
-    # Jeff 10-30 approved: "record prices for every pick, watch-only". On 10-29 only the auto-added pick had prices,
+    # tomahawkeer 10-30 approved: "record prices for every pick, watch-only". On 10-29 only the auto-added pick had prices,
     # so four of five picks could not be graded. Now every pick of the day is priced with the watchlist. Watch-only
     # picks are NEVER scanned, never asked about and never bought: engine.buy still refuses anything off the watchlist.
     def watch_only_picks(self, now: float, watch: list[str]) -> list[str]:
@@ -290,6 +349,7 @@ class Desk:
                 b = bars.get(t) or []
                 mv = window(b)
                 row = {"day": day, "ticker": t, "conviction": p.get("conviction", "medium"),
+                       "preview": bool(r.get("preview")),
                        "tradable": t in wl, "auto_added": auto.get(t) == day,
                        "bars": len(b), "open": b[0]["o"] if b else None,
                        "px_945": self._price_at(b, t_in), "px_345": self._price_at(b, t_out),
@@ -421,7 +481,9 @@ class Desk:
             rv = self.brain.review(prompt)
             rec["usage"] = self.call_usage()
             self.archive_prompt(rec, prompt, json.dumps(rv)[:20000])
+            self.note_claude_result(True)
         except Exception as e:
+            self.note_claude_result(False, str(e), now)
             rec.update(action="error", result=f"review failed: {e}"[:300])
             self.record(rec)
             return
@@ -468,11 +530,11 @@ class Desk:
         except Exception as e:
             log.warning("buy alert failed: %s", e)
 
-    def alert_research(self, picks: list[dict], added: list[str]) -> None:
+    def alert_research(self, picks: list[dict], added: list[str], preview: bool = False) -> None:
         try:
             high = [p["ticker"] for p in picks if p.get("conviction") == "high"]
             rest = [p["ticker"] for p in picks if p["ticker"] not in high]
-            self.alert("research", f"Research done: {len(picks)} picks",
+            self.alert("research", f"Research {'preview' if preview else 'done'}: {len(picks)} picks",
                        f"High: {', '.join(high) or 'none'} | Others: {', '.join(rest) or 'none'}"
                        + (f" | auto-added: {', '.join(added)}" if added else ""))
         except Exception as e:
@@ -637,6 +699,53 @@ class Desk:
             log.warning("trigger lab summary failed: %s", e)
             trig = ""
         return "\n".join(x for x in (facts, extra, trig) if x)
+
+    # ---------- base rates for every decision (10-31 weekend) ----------
+    # Before this, the desk's own measurements (trigger lab, decision score) reached Claude only in the end-of-day
+    # review, i.e. AFTER the day's decisions. The 21-day trigger lab found no trigger with a mean R clearly above 0
+    # (the scanner is an alarm clock, not an edge), and the decision score found Claude's buys scoring below its
+    # passes. Putting that in front of every fresh decision is a prompt change (part of the tested system, pre-reg).
+    # Read from the two JSON reports rebuilt at each close-out; cached on their mtimes; never blocks a call.
+    def base_rates(self, kind: str, held: bool) -> str:
+        if held or not self.cfg.get("base_rates_in_prompt", True):
+            return ""
+        D = os.path.join(self.folder, "data")
+        key = []
+        for n in ("trigger_lab.json", "decision_score.json"):
+            p = os.path.join(D, n)
+            key.append(os.path.getmtime(p) if os.path.exists(p) else 0)
+        cache = getattr(self, "_br_cache", None)
+        if not cache or cache[0] != key:
+            tl = ds = None
+            try:
+                tl = json.load(open(os.path.join(D, "trigger_lab.json"), encoding="utf-8")) if key[0] else None
+            except Exception as e:
+                log.warning("base rates: trigger lab unreadable: %s", e)
+            try:
+                ds = json.load(open(os.path.join(D, "decision_score.json"), encoding="utf-8")) if key[1] else None
+            except Exception as e:
+                log.warning("base rates: decision score unreadable: %s", e)
+            cache = (key, tl, ds)
+            self._br_cache = cache
+        _, tl, ds = cache
+        lines = []
+        row = next((r for r in (tl or {}).get("rows", []) if r.get("trigger") == kind), None)
+        if row and row.get("mean_r") is not None and row.get("random_mean_r") is not None:
+            lines.append(f"- This wake-up trigger ({kind}) replayed on {row.get('days', '?')} saved days, {row.get('n_r', '?')} "
+                         f"times, with one standard trade (stop 2 typical 1-minute ranges, target 1.5x risk): average "
+                         f"{row['mean_r']:+.2f} R; random minutes on the same stocks {row['random_mean_r']:+.2f} R "
+                         f"({row.get('verdict', '')}). The trigger alone is not an edge; a buy needs a reason beyond it.")
+        ba = (ds or {}).get("by_action") or {}
+        if ba.get("buy", {}).get("n") and ba.get("pass", {}).get("n"):
+            b, p = ba["buy"], ba["pass"]
+            lines.append(f"- Your own judgment so far ({ds.get('n', '?')} decisions over {len(ds.get('days') or [])} days, "
+                         f"same standard trade): your buys averaged {b['mean_r']:+.2f} R, your passes {p['mean_r']:+.2f} R "
+                         f"({(ds.get('buy_minus_pass') or {}).get('verdict', '')}). If your buys keep scoring below your "
+                         f"passes, your filter is not adding anything yet.")
+        if not lines:
+            return ""
+        return ("Base rates (the desk's own hindsight measurements, small samples, not rules):\n" + "\n".join(lines) +
+                "\nIf you buy, say in 'why' what makes THIS case better than the usual one.")
 
     def versions(self) -> dict:
         """What produced a decision (10-31, idea from ai-hedge-fund signals/llm_agent.py + llm/contract.py): short
@@ -897,14 +1006,17 @@ class Desk:
             self.book.save()
         prompt = build_prompt(sym, reason, bars, qqq, self.feed.news(sym), view, max_sh,
                               self.lessons().get("lessons"), scorecard(self.book.trades()),
-                              self.todays_research(now), self.earlier_today(sym, now, price))
+                              self.todays_research(now), self.earlier_today(sym, now, price),
+                              self.base_rates(kind, sym in view["positions"]))
         rec["v"] = self.versions()
         t_ask = time.time()
         try:
             dec, _raw = self.brain.decide(prompt)
             rec["usage"] = self.call_usage()
             self.archive_prompt(rec, prompt, _raw)
+            self.note_claude_result(True)
         except Exception as e:
+            self.note_claude_result(False, str(e), now)
             self.archive_prompt(rec, prompt, f"ERROR: {e}"[:500])
             rec.update(action="error", result=f"Claude call failed: {e}"[:300])
             self.record(rec)

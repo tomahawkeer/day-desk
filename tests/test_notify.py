@@ -269,6 +269,46 @@ def test_desk_problem_only_after_five_minutes(tmp_path):
     assert h.watch_problem(t0 + 2402 + 300) is True and "FEED FAILING" in fn.sent[-1][2]
 
 
+def test_claude_not_logged_in_raises_banner_rings_once_and_clears(tmp_path):
+    """10-31: if --bare becomes the -p default (it ignores the subscription login), every call fails 'Not logged in'.
+    The first such failure must put up the banner; the heartbeat thread rings the phone once; a good call clears it."""
+    fn = FakeNotifier()
+    bars = breakout_set()
+    d, brain = desk_with(tmp_path, bars, [], fn)
+
+    def boom(prompt):
+        raise RuntimeError("Not logged in · Please run /login")
+    brain.decide = boom
+    t = bars["AMD"][-1]["t"] + 65
+    d.step(t)
+    assert d.recent[-1]["action"] == "error"
+    assert any(a.startswith("CLAUDE CAN'T BE REACHED") and "not logged in" in a.lower() for a in d.alerts)
+    h = d.health
+    h.loop_done(t)
+    assert "ATTENTION" in h.heartbeat(t)["verdict"]
+    assert h.watch_problem(t) is False                              # waits desk_problem_minutes
+    h.loop_done(t + 301)
+    assert h.watch_problem(t + 301) is True
+    assert fn.sent[-1][1] == "Day Desk needs attention" and "sign in" in fn.sent[-1][2]
+    h.loop_done(t + 900)
+    assert h.watch_problem(t + 900) is False                        # once per episode
+    d.note_claude_result(True)                                      # a later call works: banner gone
+    assert d.alerts == [] and "ATTENTION" not in h.heartbeat(t + 901)["verdict"]
+
+
+def test_three_failures_in_a_row_of_any_kind_raise_the_banner(tmp_path):
+    d, _ = desk_with(tmp_path, {}, [], FakeNotifier())
+    d.note_claude_result(False, "timed out")
+    d.note_claude_result(False, "no JSON in the answer")
+    assert d.alerts == []
+    d.note_claude_result(True)                                      # a success resets the count
+    for _ in range(3):
+        d.note_claude_result(False, "timed out")
+    assert len(d.alerts) == 1 and "3 Claude calls failed in a row" in d.alerts[0]
+    d.note_claude_result(False, "timed out")
+    assert len(d.alerts) == 1                                       # not stacked
+
+
 def test_a_broken_notifier_never_breaks_trading(tmp_path):
     bars = breakout_set()
     d, _ = desk_with(tmp_path, bars, [{"action": "buy", "shares": 10, "stop": 99.0, "target": 103.0, "why": "b"}],

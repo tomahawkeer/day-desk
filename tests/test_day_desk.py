@@ -524,6 +524,38 @@ def test_research_runs_once_each_trading_morning_and_feeds_decisions(tmp_path):
     assert "beat earnings" in fmt_research_for("PLTR", r) and "Futures flat." in fmt_research_for("AMD", r)
 
 
+def test_research_session_and_weekend_preview(tmp_path):
+    """10-31: a weekend/evening 'Research now' previews the NEXT session (searches, saved under that date,
+    never auto-adds); a weekday before 4 PM is today. Saturday's lean run answered 'market closed' with no search."""
+    d, brain = make_desk(tmp_path, {}, [], research=True)
+    sat = datetime(2026, 10, 31, 11, 0, tzinfo=ET).timestamp()
+    assert d.research_session(ts(8, 46)) == ("2026-10-28", False)
+    assert d.research_session(ts(16, 30)) == ("2026-10-29", True)                  # Wed evening -> Thu
+    assert d.research_session(sat) == ("2026-11-02", True)                         # Sat -> Mon
+    assert d.research_session(datetime(2026, 11, 26, 18, 0, tzinfo=ET).timestamp()) == ("2026-11-30", True)  # skips 11-27
+    brain.research_prompts = []
+    assert d.run_research(sat, sync=True) == "started"
+    assert "PREVIEW" in brain.research_prompts[0] and "Monday November 02, 2026" in brain.research_prompts[0]
+    r = d.research()
+    assert r["day"] == "2026-11-02" and r["preview"] is True
+    assert d.watchlist() == ["AMD"]                                                 # PLTR is high, but no auto-add
+    assert d.recent[-1]["result"].startswith("PREVIEW for 2026-11-02")
+    # Monday 8:45: the real run replaces the preview and auto-adds as usual
+    d._sync_research = True
+    d.step(datetime(2026, 11, 2, 8, 46, tzinfo=ET).timestamp())
+    assert d.research()["preview"] is False and "PLTR" in d.watchlist()
+
+
+def test_research_warns_when_no_web_search_was_made(tmp_path):
+    d, brain = make_desk(tmp_path, {}, [], research=True)
+    brain.last_usage = lambda: {"tok_in": 3000, "searches": 0, "turns": 1}
+    d.run_research(ts(8, 46), sync=True)
+    assert "WARNING: no web search" in d.recent[-1]["result"]
+    brain.last_usage = lambda: {"tok_in": 90000, "searches": 7, "turns": 9}
+    d.run_research(ts(8, 50), sync=True)
+    assert "WARNING" not in d.recent[-1]["result"]
+
+
 def test_research_auto_add_modes(tmp_path):
     d, brain = make_desk(tmp_path, {}, [], research=True)
     d.cfg = dict(CFG, auto_add_picks=False)
@@ -537,7 +569,7 @@ def test_auto_added_come_off_next_morning_unless_held_or_repicked(tmp_path):
     picks_day1 = [{"ticker": "PLTR", "conviction": "high"}, {"ticker": "VRT", "conviction": "high"}]
     assert d.apply_auto_picks("2026-10-28", picks_day1) == ["PLTR", "VRT"]
     d.book.s["positions"]["VRT"] = {"shares": 1, "entry": 1, "entry_t": 0, "stop": 0.5, "target": 2, "why": "x"}
-    d.set_watchlist(d.watchlist() + ["MSFT"])          # Jeff adds one himself
+    d.set_watchlist(d.watchlist() + ["MSFT"])          # tomahawkeer adds one himself
     d.apply_auto_picks("2026-10-29", [{"ticker": "NVDA", "conviction": "medium"}])
     wl = d.watchlist()
     assert "PLTR" not in wl and "VRT" in wl and "MSFT" in wl and "AMD" in wl and "NVDA" not in wl
@@ -1279,3 +1311,28 @@ def test_position_up_one_risk_unit_asks_claude_once_to_protect_the_gain(tmp_path
     n = len(brain.prompts)
     d.step(up["AMD"][-1]["t"] + 95)                                     # still up: never asked twice
     assert len(brain.prompts) == n
+
+
+def test_base_rates_reach_fresh_decisions_only(tmp_path):
+    """10-31 weekend: the trigger lab and decision score reached Claude only in the evening review. Now every fresh
+    buy/pass prompt carries them; held positions don't; missing or broken reports never block a call."""
+    import json as _j
+    bars = breakout_set()
+    d, brain = make_desk(tmp_path, bars, [{"action": "pass", "why": "x"}])
+    assert d.base_rates("breakout", False) == ""                       # no reports yet: nothing, no crash
+    D = tmp_path / "data"
+    (D / "trigger_lab.json").write_text(_j.dumps({"rows": [{"trigger": "breakout", "days": 21, "n_r": 100, "mean_r": -0.03,
+                                                             "random_mean_r": 0.06, "verdict": "within noise"}]}))
+    (D / "decision_score.json").write_text(_j.dumps({"n": 40, "days": ["a", "b", "c"], "by_action": {
+        "buy": {"n": 10, "mean_r": -0.53}, "pass": {"n": 30, "mean_r": -0.06}}, "buy_minus_pass": {"verdict": "too few days"}}))
+    txt = d.base_rates("breakout", False)
+    assert "-0.03 R" in txt and "+0.06 R" in txt and "buys averaged -0.53 R" in txt
+    assert d.base_rates("breakout", True) == ""                        # holding: not about entries
+    d.step(bars["AMD"][-1]["t"] + 65)
+    assert "Base rates" in brain.prompts[-1] and "breakout" in brain.prompts[-1]
+    (D / "trigger_lab.json").write_text("{broken")
+    import os as _o, time as _t
+    _o.utime(D / "trigger_lab.json", (_t.time() + 5, _t.time() + 5))
+    assert "buys averaged" in d.base_rates("breakout", False)          # one bad report doesn't kill the other
+    d.cfg = dict(d.cfg, base_rates_in_prompt=False)
+    assert d.base_rates("breakout", False) == ""
