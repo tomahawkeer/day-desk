@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f151c">
+<meta name="color-scheme" content="dark">
+<title>Day Desk</title>
+<style>
+:root{
+  /* Dark only (Jeff 10-29: "make the webpage darkmode"), whatever the phone's own setting is. */
+  --bg:#0f151c; --panel:#161e27; --ink:#e4eaf0; --muted:#94a3b3; --line:#27333f;
+  --accent:#6aa5ec; --up:#3fbf7f; --down:#f0705f; --warn:#e0a33a; --chip:#1f2a36;
+  --on-accent:#0b1118;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SFMono-Regular",Consolas,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+.wrap{max-width:1000px;margin:0 auto;padding-block:16px 40px;
+  padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+h1{font-size:1.5rem;margin:0;letter-spacing:.01em}
+h2{font-size:.78rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.pill{font-family:var(--mono);font-size:.75rem;padding:4px 10px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--up)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--down)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.stat{background:var(--panel);padding:10px 12px;min-width:0}
+.k{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.v{font-family:var(--mono);font-size:1.25rem;font-weight:600;font-variant-numeric:tabular-nums}
+.n{font-size:.78rem;color:var(--muted)}
+.up{color:var(--up)} .down{color:var(--down)}
+.box{border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+td.sym{font-family:var(--mono);font-weight:700}
+td.why{color:var(--muted);min-width:200px}
+.empty{padding:14px;color:var(--muted)}
+.feed div{display:grid;grid-template-columns:62px 1fr;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.feed div:last-child{border-bottom:0}
+.feed time{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.feed p{margin:0;min-width:0}
+.feed b{font-family:var(--mono)}
+.tag{font-size:.7rem;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--chip);color:var(--muted);margin-left:4px}
+.tag.buy{color:var(--up)} .tag.sell{color:var(--down)}
+.watch{padding:12px;display:flex;flex-direction:column;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-weight:700;font-size:.9rem;padding:5px 6px 5px 10px;border-radius:6px;background:var(--chip)}
+.chip button{border:0;background:transparent;color:var(--muted);font-size:1.1rem;line-height:1;padding:2px 6px;cursor:pointer}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input{font-family:var(--mono);font-size:1rem;text-transform:uppercase;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:10em;max-width:100%}
+button.btn{font:inherit;font-weight:600;padding:8px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+button.btn.ghost{background:var(--chip);color:var(--ink)}
+button.btn.danger{background:var(--down)}
+button:disabled{opacity:.5}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{font-size:.8rem;color:var(--muted);margin:0}
+.login{max-width:360px;margin:15vh auto;padding:20px;display:flex;flex-direction:column;gap:12px}
+.learn{padding:12px;display:flex;flex-direction:column;gap:10px}
+.learn ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.learn li .ev{display:block;font-size:.78rem;color:var(--muted)}
+.tag.solid{color:var(--up)}
+/* phone: jump bar to every section + a capped call feed, so nothing needs a long scroll (Jeff 10-31) */
+.jump{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;padding:8px 0;margin:0 0 4px;background:var(--bg);scrollbar-width:none}
+.jump::-webkit-scrollbar{display:none}
+.jump a{flex:none;font-family:var(--mono);font-size:.8rem;padding:6px 11px;border-radius:999px;background:var(--chip);color:var(--ink);text-decoration:none}
+.jump a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body.desk .jump{display:none}
+section{scroll-margin-top:52px}
+body:not(.desk) .feed{max-height:55vh;overflow-y:auto}
+.bar{height:10px;border-radius:999px;background:var(--chip);overflow:hidden;margin:6px 0 4px}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:999px}
+.gauge{padding:12px;border-bottom:1px solid var(--line)}
+.gauge:last-child{border-bottom:0}
+.gauge .big{font-family:var(--mono);font-size:1.1rem;font-weight:600}
+.utbl td,.utbl th{padding:6px 9px}
+.pick{padding:10px 12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.pick .row{justify-content:space-between}
+.pick .row b{font-family:var(--mono);font-size:1rem}
+.pick p{margin:0}
+.pick .k2{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+/* Desktop vs phone (10-29). The script picks the layout from the screen width (or the Auto/Phone/Desktop switch) and
+   moves the sections into two columns. Phone = one column in the original order. */
+.view{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.view button{font:inherit;font-size:.72rem;font-family:var(--mono);border:0;background:transparent;color:var(--muted);padding:4px 10px;cursor:pointer}
+.view button[aria-pressed="true"]{background:var(--chip);color:var(--ink)}
+.hright{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cols{display:none}
+body.desk .wrap{max-width:1480px;padding-left:28px;padding-right:28px}
+body.desk .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(330px,410px);gap:22px;align-items:start}
+body.desk .col{display:flex;flex-direction:column;gap:18px;min-width:0}
+body.desk .col.side{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto;padding-right:2px}
+body.desk .feed{max-height:560px;overflow-y:auto}
+body.desk h1{font-size:1.7rem}
+.confirm{padding:10px 12px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+/* phone alerts box (10-31): ntfy topic + test button */
+.alerts{padding:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.alerts .k2{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.alerts ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.alerts code{font-family:var(--mono);font-size:.85rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.alerts a{color:var(--accent);overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<div class="login box" id="login" hidden>
+  <h1>Day Desk</h1>
+  <p class="note">Type the access key shown in the Day Desk window on your PC. This phone remembers it.</p>
+  <form id="loginform" class="row"><input id="keyin" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="access key" style="text-transform:none"><button class="btn" type="submit">Open</button></form>
+  <p class="note" id="loginmsg"></p>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>Day Desk</h1>
+    <div class="hright">
+      <div class="pills"><span class="pill" id="p-market">…</span><span class="pill" id="p-brain">…</span><span class="pill" id="p-calls">…</span><span class="pill" id="p-use" title="Claude usage today, measured from every call">…</span></div>
+      <div class="view" role="group" aria-label="Layout"><button type="button" data-view="auto">Auto</button><button type="button" data-view="phone">Phone</button><button type="button" data-view="desktop">Desktop</button></div>
+    </div>
+  </header>
+
+  <div class="box" id="alerts" role="alert" hidden style="border-color:var(--down);padding:10px 12px;margin-bottom:10px;color:var(--down)"></div>
+  <nav class="jump" id="jump" aria-label="Jump to section"></nav>
+
+  <section>
+    <h2>Scoreboard</h2>
+    <div class="stats">
+      <div class="stat"><div class="k">Equity</div><div class="v" id="s-eq">—</div><div class="n">start $10,000</div></div>
+      <div class="stat"><div class="k">Total P&amp;L</div><div class="v" id="s-pnl">—</div><div class="n" id="s-pnlp">—</div></div>
+      <div class="stat"><div class="k">Today</div><div class="v" id="s-day">—</div><div class="n">since the open</div></div>
+      <div class="stat"><div class="k">Trades</div><div class="v" id="s-n">—</div><div class="n" id="s-win">—</div></div>
+    </div>
+  </section>
+
+  <section data-col="side">
+    <h2>Controls</h2>
+    <div class="box">
+      <div class="row" style="padding:12px">
+        <button class="btn ghost" id="pausebtn" type="button">Pause trading</button>
+        <button class="btn danger" id="flatbtn" type="button">Sell all now</button>
+        <span class="note" id="ctlmsg" role="status"></span>
+      </div>
+      <div class="confirm" id="flatconfirm" hidden>
+        <span>Sell every open position at the current price?</span>
+        <button class="btn danger" id="flatyes" type="button">Yes, sell all</button>
+        <button class="btn ghost" id="flatno" type="button">Cancel</button>
+      </div>
+      <div class="alerts" id="alertsbox">
+        <div class="row" style="justify-content:space-between"><span class="k2">Phone alerts</span><span class="pill" id="p-alerts">…</span></div>
+        <div id="alertsinfo"></div>
+        <div class="row"><button class="btn ghost" id="alerttest" type="button">Send test alert</button><span class="note" id="alertmsg" role="status"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section data-col="side">
+    <h2>Watchlist</h2>
+    <div class="box watch">
+      <p class="note">Only these can be bought. Changes count from the next scan (30 seconds). Removing a stock you hold stops new buys; the open position is still managed.</p>
+      <div class="chips" id="chips"></div>
+      <p class="note" id="locknote" role="status"></p>
+      <form class="row" id="addform"><label for="addin" class="note" hidden>Ticker</label><input id="addin" maxlength="7" placeholder="e.g. MSFT" autocomplete="off"><button class="btn" type="submit">Add</button><span class="note" id="addmsg" role="status"></span></form>
+    </div>
+  </section>
+
+  <section data-col="main">
+    <h2>Open now</h2>
+    <div class="box tbl"><table><thead><tr><th>Stock</th><th>Shares</th><th>Bought</th><th>Last</th><th>P&amp;L</th><th>Stop</th><th>Target</th><th>Why</th></tr></thead><tbody id="t-open"></tbody></table></div>
+  </section>
+
+  <section data-col="main">
+    <h2>Claude's calls</h2>
+    <div class="box feed" id="feed"></div>
+  </section>
+
+  <section data-col="side">
+    <h2>Morning research</h2>
+    <div class="box" id="research"></div>
+  </section>
+
+  <section data-col="side">
+    <h2>The test</h2>
+    <div class="box" id="progress"></div>
+  </section>
+
+  <section data-col="side">
+    <h2>Claude usage</h2>
+    <div class="box" id="usage"></div>
+  </section>
+
+  <section data-col="main">
+    <h2>Strategy scorecard</h2>
+    <div class="box tbl"><table><thead><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>Total P&amp;L</th><th>Avg / trade</th><th>Claude's verdict</th></tr></thead><tbody id="t-score"></tbody></table></div>
+  </section>
+
+  <section data-col="main">
+    <h2>Trade lab — what the 1-minute bars say</h2>
+    <div class="box" id="lab"></div>
+  </section>
+
+  <section data-col="side">
+    <h2>What Claude has learned</h2>
+    <div class="box" id="learned"></div>
+  </section>
+
+  <section data-col="main">
+    <h2>Closed trades</h2>
+    <div class="box tbl"><table><thead><tr><th>Day</th><th>In → out</th><th>Strategy</th><th>Stock</th><th>Shares</th><th>Bought</th><th>Sold</th><th>P&amp;L</th><th>Why in</th><th>Why out</th></tr></thead><tbody id="t-closed"></tbody></table></div>
+  </section>
+  <div class="cols" id="cols"><div class="col main" id="col-main"></div><div class="col side" id="col-side"></div></div>
+  <p class="note" id="foot">Paper money only. No broker is connected.</p>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let KEY = ""; try { KEY = localStorage.getItem("daydesk_key") || ""; } catch(e) {}
+  let S = null;
+  const tz = {timeZone:"America/New_York"};
+  const usd = (x, s) => x == null || !isFinite(x) ? "—" : (s && x > 0 ? "+" : x < 0 ? "−" : "") + "$" + Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pct = x => x == null || !isFinite(x) ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2) + "%";
+  const px = x => x == null || !isFinite(x) ? "—" : Number(x).toFixed(2);
+  const cls = x => x > 0 ? "up" : x < 0 ? "down" : "";
+  const hm = t => t ? new Date(t*1000).toLocaleTimeString("en-US",{...tz,hour:"numeric",minute:"2-digit"}) : "—";
+  const day = t => t ? new Date(t*1000).toLocaleDateString("en-US",{...tz,month:"short",day:"numeric"}) : "—";
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+  async function api(path, body){
+    const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json","X-Key":KEY}, body:JSON.stringify(body)} : {headers:{"X-Key":KEY}});
+    if (r.status === 401){ showLogin("That key didn't work."); throw new Error("auth"); }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "request failed");
+    return j;
+  }
+  function showLogin(msg){ $("app").hidden = true; $("login").hidden = false; $("loginmsg").textContent = msg || ""; }
+  $("loginform").addEventListener("submit", e => { e.preventDefault(); KEY = $("keyin").value.trim(); try{ localStorage.setItem("daydesk_key", KEY); }catch(e){} load(); });
+
+  function render(){
+    const s = S; if (!s) return;
+    $("login").hidden = true; $("app").hidden = false;
+    const st = s.status || {};
+    const age = st.last_poll_t ? s.now - st.last_poll_t : null;
+    const mk = $("p-market");
+    mk.textContent = (st.market || "—") + (age != null && st.market && st.market.startsWith("open") ? " · " + Math.round(age) + "s ago" : "");
+    mk.className = "pill " + (st.error ? "bad" : st.market && st.market.startsWith("open") ? "ok" : "");
+    if (st.error) mk.textContent = st.error.slice(0, 60);
+    $("p-brain").textContent = st.brain === "live" ? "Claude on · " + s.model : st.brain;
+    $("p-brain").className = "pill " + (st.brain === "live" ? "ok" : "warn");
+    $("p-calls").textContent = s.calls_today + " / " + s.max_calls + " calls today";
+    const tot = s.equity - s.start_cash, td = s.equity - s.day_start_equity;
+    $("s-eq").textContent = usd(s.equity);
+    $("s-pnl").textContent = usd(tot, true); $("s-pnl").className = "v " + cls(tot);
+    $("s-pnlp").textContent = pct(tot / s.start_cash * 100);
+    $("s-day").textContent = usd(td, true); $("s-day").className = "v " + cls(td);
+    const n = s.trades.length, w = s.trades.filter(t => t.pnl > 0).length;
+    $("s-n").textContent = n; $("s-win").textContent = n ? "win rate " + Math.round(w / n * 100) + "%" : "none closed yet";
+    $("pausebtn").textContent = s.paused ? "Resume trading" : "Pause trading";
+    $("flatbtn").disabled = !s.positions.length;
+    // phone alerts (10-31): only rebuilt when something changed, so a tap on the link isn't lost to the 10 s refresh
+    const al = s.phone_alerts || {};
+    $("p-alerts").textContent = al.enabled ? "on" : "off";
+    $("p-alerts").className = "pill " + (al.enabled ? (al.last_error ? "warn" : "ok") : "");
+    $("alerttest").disabled = !al.enabled;
+    const aKey = JSON.stringify([al.enabled, al.set_up, al.topic, al.subscribe_url, al.last_error, al.levels]);
+    if ($("alertsinfo").dataset.k !== aKey){
+      $("alertsinfo").dataset.k = aKey;
+      const lv = al.levels || {}, grp = w => Object.keys(lv).filter(k => lv[k] === w).map(k => k.replace("_", " ")).join(", ") || "none";
+      $("alertsinfo").innerHTML = !al.set_up ? '<p class="note">Alerts are not running in this copy of Day Desk.</p>'
+        : (al.enabled ? "" : '<p class="note">Turned off: set <code>"enabled": true</code> under <code>alerts</code> in config.json, then restart RUN.bat.</p>') +
+          `<ol><li>Install <b>ntfy</b> from the app store (free, no account).</li>
+           <li>Open it, tap <b>+</b>, and subscribe to topic <code>${esc(al.topic)}</code>${al.host && al.host !== "ntfy.sh" ? " on server <code>" + esc(al.server) + "</code>" : ""}.</li>
+           <li>Or, on this phone, tap <a href="${esc(al.subscribe_url)}">${esc(al.subscribe_url)}</a> to open it in the app.</li></ol>
+           <p class="note">Loud (rings): ${esc(grp("loud"))}. Normal: ${esc(grp("normal"))}. Silent: ${esc(grp("silent"))}. Off: ${esc(grp("off"))}. Change them under <code>alerts</code> in config.json. Keep the topic to yourself: anyone who has it can read the alerts.</p>` +
+          (al.last_error ? `<p class="note down">Last send failed: ${esc(al.last_error)}</p>` : "");
+    }
+    // watchlist
+    const ch = $("chips"); ch.textContent = "";
+    s.watchlist.forEach(sym => {
+      const c = document.createElement("span"); c.className = "chip";
+      const t = document.createElement("span"); t.textContent = sym; c.appendChild(t);
+      const lk = (s.locks || {})[sym];
+      if (lk){ const l = document.createElement("span"); l.className = "tag sell"; l.textContent = "locked"; l.title = lk; c.appendChild(l); c.title = lk; }
+      const b = document.createElement("button"); b.type = "button"; b.textContent = "×"; b.setAttribute("aria-label", "Remove " + sym);
+      b.onclick = () => saveWatch(s.watchlist.filter(x => x !== sym), sym + " removed");
+      c.appendChild(b); ch.appendChild(c);
+    });
+    const lkl = Object.entries(s.locks || {});
+    $("locknote").textContent = lkl.map(([k, v]) => k + ": " + v).join(" · ");
+    if (!s.watchlist.length) ch.innerHTML = '<span class="note">Empty. Add a ticker so Claude has something to trade.</span>';
+    // open
+    $("t-open").innerHTML = s.positions.length ? s.positions.map(p => `<tr><td class="sym">${esc(p.sym)}</td><td class="num">${p.shares}</td><td class="num">${px(p.entry)}<br><span class="note">${hm(p.entry_t)}</span></td><td class="num">${px(p.last)}</td><td class="num ${cls(p.pnl)}">${usd(p.pnl, true)}</td><td class="num">${px(p.stop)}</td><td class="num">${px(p.target)}</td><td class="why">${esc(p.why)}</td></tr>`).join("")
+      : '<tr><td colspan="8" class="empty">Nothing open.</td></tr>';
+    // decisions
+    $("feed").innerHTML = s.decisions.length ? s.decisions.map(d => {
+      const a = (d.action || "").toLowerCase();
+      return `<div><time>${hm(d.t)}<br>${day(d.t)}</time><p><b>${esc(d.sym)}</b><span class="tag">${esc(d.trigger)}</span><span class="tag ${a === "buy" ? "buy" : a === "sell" ? "sell" : ""}">${esc(a)}</span>${d.setup ? '<span class="tag">' + esc(d.setup) + '</span>' : ''}<br>${esc(d.result || "")}${d.why ? "<br><span class='note'>" + esc(d.why) + "</span>" : ""}${d.reason ? "<br><span class='note'>Woken by: " + esc(d.reason) + "</span>" : ""}</p></div>`;
+    }).join("") : '<div><time>—</time><p class="note">Nothing yet. Claude gets asked when the scanner sees a setup on one of your stocks.</p></div>';
+    // research
+    const R = s.research || {}, today = new Date(s.now * 1000).toLocaleDateString("en-CA", tz);
+    let rh = '<div class="row" style="padding:12px;justify-content:space-between"><span class="note">' +
+      (s.research_running ? "Researching now… (takes a few minutes)" : R.day ? "From " + esc(R.day) + (R.day === today ? " (today)" : " (not today)") + (R.status && R.status !== "done" ? " · " + esc(R.status) : "") : "Runs every trading morning at 8:45 AM ET.") +
+      '</span><button class="btn ghost" id="researchbtn" type="button"' + (s.research_running ? " disabled" : "") + '>Research now</button></div>';
+    if (R.backdrop) rh += '<div class="pick"><span class="k2">Market backdrop</span><p>' + esc(R.backdrop) + '</p></div>';
+    (R.picks || []).forEach(pk => {
+      const on = s.watchlist.includes(pk.ticker), auto = (s.auto_added || {})[pk.ticker];
+      const conv = pk.conviction || "medium";
+      const mv = (s.pick_moves || {})[pk.ticker], mvTag = typeof mv === "number" && R.day === today ? `<span class="tag ${mv >= 0 ? "buy" : "sell"}" title="since the open${on ? "" : ", watch-only: priced for grading, not traded"}">${mv >= 0 ? "+" : ""}${mv.toFixed(2)}%${on ? "" : " · watch-only"}</span>` : "";
+      rh += `<div class="pick"><div class="row"><span><b>${esc(pk.ticker)}</b><span class="tag ${conv === "high" ? "buy" : ""}">${esc(conv)} conviction</span>${mvTag}</span>${on ? `<span class="note">${auto ? "auto-added for today" : "on watchlist"}</span>` : `<button class="btn" type="button" data-add="${esc(pk.ticker)}">Add to watchlist</button>`}</div>
+        <p>${esc(pk.catalyst)}</p><p class="note"><b>Why watch:</b> ${esc(pk.why_watch)}</p><p class="note"><b>Buy if:</b> ${esc(pk.setup)} · <b>Avoid if:</b> ${esc(pk.avoid_if)}</p>${pk.levels ? `<p class="note"><b>Levels:</b> ${esc(pk.levels)}</p>` : ""}<p class="note">Source: ${esc(pk.source)}</p></div>`;
+    });
+    $("research").innerHTML = rh;
+    $("researchbtn").onclick = async () => { try { await api("/api/research", {}); load(); } catch(e){ $("ctlmsg").textContent = e.message; } };
+    $("research").querySelectorAll("[data-add]").forEach(btn => btn.onclick = () => { const t = btn.getAttribute("data-add"); saveWatch(s.watchlist.concat(t), t + " added from research."); });
+    // start-up guard alerts (frozen limits changed, books don't add up)
+    const AL = s.alerts || [];
+    $("alerts").hidden = !AL.length;
+    $("alerts").innerHTML = AL.map(a => "⚠ " + esc(a)).join("<br>");
+    // the test (progress only: the pre-registration forbids a verdict before the read)
+    const P = s.progress || {};
+    if (!s.progress){
+      $("progress").innerHTML = '<div class="gauge"><p class="note">Restart RUN.bat to load the new test tracker.</p></div>';
+    } else if (P.next_read){
+      const done = Math.min(100, Math.round(P.closed / P.next_read * 100));
+      const rd = Math.min(100, Math.round((P.research_graded || 0) / (P.research_needed || 40) * 100));
+      $("progress").innerHTML = `<div class="gauge"><span class="k">${esc(P.read_name)} — the first real grade</span>
+        <div class="big">${P.closed} of ${P.next_read} closed trades</div><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${P.next_read}" aria-valuenow="${P.closed}"><i style="width:${done}%"></i></div>
+        <p class="note">${P.per_day ? P.per_day + " trades a day so far over " + P.trading_days + " trading day" + (P.trading_days === 1 ? "" : "s") + " · about " + P.est_days_left + " more trading days at this pace" : "no trades yet"}</p></div>
+        <div class="gauge"><span class="k">Morning research grade</span><div class="big">${P.research_graded} of ${P.research_needed} high-conviction picks priced</div><div class="bar"><i style="width:${rd}%"></i></div></div>
+        <div class="gauge"><p class="note">The grade asks two things: did it make money after costs, and did it beat the same trades placed at random times (2,000 tries)? Both must pass. Until ${P.next_read} trades there is <b>no verdict</b>, good or bad — a handful of trades proves nothing either way. Run GRADE.bat on the PC any time to see this in detail.</p></div>`;
+    } else {
+      $("progress").innerHTML = '<div class="gauge"><p class="note">All pre-registered reads are done. Run GRADE.bat for the report.</p></div>';
+    }
+    // usage
+    const U = s.usage || {}, ud = U.days || [], todayU = ud.find(x => x.day === today);
+    const money = x => "$" + (x || 0).toFixed(2);
+    $("p-use").textContent = todayU && todayU.calls - todayU.unmeasured > 0 ? "≈" + money(todayU.cost_usd) + " of plan use today" : "usage: measuring";
+    if (ud.length){
+      const wk = ud.reduce((a, d) => ({calls: a.calls + d.calls, cost: a.cost + d.cost_usd, un: a.un + d.unmeasured}), {calls: 0, cost: 0, un: 0});
+      const kinds = ["trading", "research", "review", "self-test"], kshort = {"trading": "trade", "research": "news", "review": "review", "self-test": "test"};
+      $("usage").innerHTML = `<div class="gauge"><span class="k">Last ${ud.length} days</span><div class="big">${wk.calls} Claude calls · ≈${money(wk.cost)}</div>
+        <p class="note">Measured from Claude Code's own report on each call${U.measured_since ? ", since " + esc(U.measured_since) : " (starts with the next call)"}. The dollars are what the same calls would cost on the paid API — <b>you pay nothing extra</b>; it's the yardstick for how much of your weekly plan the desk uses.${wk.un ? " " + wk.un + " older calls weren't measured." : ""}</p></div>
+        <div class="tbl"><table class="utbl"><thead><tr><th>Day</th>${kinds.map(k => '<th title="' + k + ' calls">' + kshort[k] + "</th>").join("")}<th>≈ $</th></tr></thead><tbody>${ud.slice().reverse().map(d => `<tr><td style="white-space:nowrap">${esc(d.day.slice(5))}</td>${kinds.map(k => '<td class="num">' + ((d.by_kind[k] || {}).calls || "·") + "</td>").join("")}<td class="num">${d.calls - d.unmeasured ? money(d.cost_usd) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
+    } else {
+      $("usage").innerHTML = '<div class="gauge"><p class="note">No Claude calls logged yet.</p></div>';
+    }
+    // scorecard
+    const verdicts = {}; ((s.learned || {}).strategies || []).forEach(v => verdicts[v.setup] = v);
+    const names = new Set((s.scorecard || []).map(r => r.setup)); Object.keys(verdicts).forEach(n => names.add(n));
+    const rows = [...names].map(n => ({...((s.scorecard || []).find(r => r.setup === n) || {setup: n, trades: 0}), v: verdicts[n]}));
+    $("t-score").innerHTML = rows.length ? rows.map(r => `<tr><td class="sym">${esc(r.setup)}</td><td class="num">${r.trades}</td><td class="num">${r.trades ? r.win_rate + "%" : "—"}</td><td class="num ${cls(r.pnl)}">${r.trades ? usd(r.pnl, true) : "—"}</td><td class="num ${cls(r.avg_pct)}">${r.trades ? pct(r.avg_pct) : "—"}</td><td class="why">${r.v ? "<b>" + esc(r.v.verdict) + "</b> · " + esc(r.v.note) : "not graded yet"}</td></tr>`).join("")
+      : '<tr><td colspan="6" class="empty">No strategies tried yet. Every buy is tagged with the strategy behind it, and each one is graded after the close.</td></tr>';
+    // trade lab (hindsight replays of the real trades; evidence for lessons, never a rule by itself)
+    const LB = s.lab, SM = LB && LB.stop_multipliers;
+    if (SM && SM.all){
+      const mults = Object.keys(SM.all.by_mult);
+      const row = (name, g) => g && g.n ? `<tr><td>${name} <span class="note">(${g.n})</span></td><td class="num ${cls(g.actual_pnl)}">${usd(g.actual_pnl, true)}</td>${mults.map(m => `<td class="num ${cls(g.by_mult[m].pnl)}">${usd(g.by_mult[m].pnl, true)}</td>`).join("")}</tr>` : "";
+      const nc = SM.noise_check || {}, rs = LB.reentry_after_stop || {}, sr = LB.stopped_then_recovered || {};
+      $("lab").innerHTML = `<div class="gauge"><p class="note">Every closed trade replayed on its real 1-minute bars with the stop set tighter or wider (same entry, same target, out by 3:45). "Actual" is what really happened; the ×1 column is the same replay with the stop it really used. Rebuilt after every close.</p></div>
+        <div class="tbl"><table class="utbl"><thead><tr><th>Trades</th><th>Actual</th>${mults.map(m => "<th>stop ×" + m + "</th>").join("")}</tr></thead><tbody>${row("All", SM.all)}${row("First hour", SM.first_hour)}${row("Later", SM.later)}</tbody></table></div>
+        <div class="gauge"><p class="note">${sr.n_stops != null ? `<b>${sr.n_recovered} of ${sr.n_stops}</b> stop-outs later reached the original target before 3:45. ` : ""}${rs.n ? `<b>${rs.n}</b> re-entries within an hour of a stop-out in the same stock: ${usd(rs.pnl, true)} total.` : "No quick re-entries after a stop yet."}</p>
+        <p class="note" style="margin-top:6px">⚠ ${esc(SM.caveat || "")}${nc.verdict ? " Noise check: " + esc(nc.verdict) + "." : ""} Claude reads these numbers in its end-of-day review; they can suggest a lesson, never prove one.</p></div>`;
+    } else {
+      $("lab").innerHTML = '<div class="gauge"><p class="note">Builds after the first close-out with saved bars. Replays every trade with tighter and wider stops so lessons rest on numbers, not hunches.</p></div>';
+    }
+    // Claude's judgment (every buy AND pass, neutral bracket) + which scanner triggers earn a call — hindsight, not the grade
+    let more = "";
+    const DS = LB && LB.decisions;
+    if (DS && DS.by_action){
+      const ba = DS.by_action, bp = DS.buy_minus_pass || {}, r2 = x => x == null ? "—" : (x > 0 ? "+" : "") + Number(x).toFixed(2);
+      more += `<div class="gauge"><span class="k">Claude's judgment — buys vs passes (${DS.n} decisions, ${(DS.days || []).length} days)</span>
+        <div class="tbl"><table class="utbl"><thead><tr><th></th><th>n</th><th>avg R</th><th>hit target</th></tr></thead><tbody>
+        ${["buy", "pass"].filter(k => ba[k]).map(k => `<tr><td>${k === "buy" ? "Bought" : "Passed"}</td><td class="num">${ba[k].n}</td><td class="num ${cls(ba[k].mean_r)}">${r2(ba[k].mean_r)}</td><td class="num">${ba[k].target_first_pct == null ? "—" : ba[k].target_first_pct + "%"}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">Every time Claude was woken, the same standard trade is replayed from that minute, so buys and passes are judged by one yardstick. If passes do as well as buys, Claude's filter isn't adding anything yet. Buys − passes: ${r2(bp.diff)} R → ${esc(bp.verdict || "")}. Passes that would have hit the stop: ${DS.dodged_losers ?? "—"}; would have hit the target: ${DS.missed_winners ?? "—"}.</p></div>`;
+    }
+    const TG = LB && LB.triggers;
+    if (TG && TG.rows && TG.rows.length){
+      const r2 = x => x == null ? "—" : (x > 0 ? "+" : "") + Number(x).toFixed(2);
+      more += `<div class="gauge"><span class="k">Which wake-up triggers earn a Claude call (${TG.days} days replayed)</span>
+        <div class="tbl"><table class="utbl"><thead><tr><th>Trigger</th><th>fires/day</th><th>avg R</th><th>random</th><th>verdict</th></tr></thead><tbody>
+        ${TG.rows.map(r => `<tr><td>${esc(r.trigger)}</td><td class="num">${r.per_day == null ? "—" : Number(r.per_day).toFixed(1)}</td><td class="num ${cls(r.mean_r)}">${r2(r.mean_r)}</td><td class="num">${r2(r.random_mean_r)}</td><td>${esc(r.verdict || "")}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">The scanner's rules replayed minute by minute on saved prices across every archived stock, with zero Claude calls, compared with random minutes on the same stock and day. Exploratory: a trigger is only changed after a written note and a check on later days.</p></div>`;
+    }
+    if (more) $("lab").insertAdjacentHTML("beforeend", more);
+    // learned
+    const L = s.learned || {};
+    $("learned").innerHTML = (L.lessons && L.lessons.length) ? `<div class="learn"><p class="note">After the close on ${esc(L.day)}:</p><p style="margin:0">${esc(L.summary)}</p><ol>${L.lessons.map(l => `<li>${esc(l.rule)}<span class="tag ${l.status === "solid" ? "solid" : ""}">${esc(l.status)}</span><span class="ev">${esc(l.evidence)}</span></li>`).join("")}</ol></div>`
+      : '<div class="learn"><p class="note">Nothing yet. After each day\'s 3:45 PM close-out, Claude reviews every trade and every pass against what the stock did next, and writes its playbook here. Every decision after that reads it.</p></div>';
+    // closed
+    $("t-closed").innerHTML = s.trades.length ? s.trades.map(t => `<tr><td>${day(t.exit_t)}</td><td class="num" style="text-align:left">${hm(t.entry_t)} → ${hm(t.exit_t)}</td><td>${esc(t.setup || "—")}</td><td class="sym">${esc(t.sym)}</td><td class="num">${t.shares}</td><td class="num">${px(t.entry)}</td><td class="num">${px(t.exit)}</td><td class="num ${cls(t.pnl)}">${usd(t.pnl, true)}<br><span class="note">${pct(t.pnl_pct)}</span></td><td class="why">${esc(t.why_in)}</td><td class="why">${esc(t.why_out)}</td></tr>`).join("")
+      : '<tr><td colspan="10" class="empty">No closed trades yet.</td></tr>';
+  }
+
+  async function load(){
+    try { S = await api("/api/state"); render(); }
+    catch(e){ if (e.message !== "auth") { $("foot").textContent = "Can't reach Day Desk right now. Is it running on your PC?"; } }
+  }
+  async function saveWatch(list, msg){
+    try { await api("/api/watchlist", {symbols:list}); $("addmsg").textContent = msg; load(); }
+    catch(e){ $("addmsg").textContent = e.message; }
+  }
+  $("addform").addEventListener("submit", e => {
+    e.preventDefault();
+    const sym = $("addin").value.trim().toUpperCase();
+    if (!/^[A-Z]{1,5}([.][A-Z])?$/.test(sym)){ $("addmsg").textContent = "Use a plain US ticker like MSFT or BRK.B."; return; }
+    if (S && S.watchlist.includes(sym)){ $("addmsg").textContent = sym + " is already on the list."; return; }
+    $("addin").value = "";
+    saveWatch((S ? S.watchlist : []).concat(sym), sym + " added.");
+  });
+  $("pausebtn").onclick = async () => { try { await api("/api/pause", {paused: !(S && S.paused)}); $("ctlmsg").textContent = S && S.paused ? "Trading resumed." : "Paused. Stops and targets still work."; load(); } catch(e){ $("ctlmsg").textContent = e.message; } };
+  $("alerttest").onclick = async () => {
+    $("alerttest").disabled = true; $("alertmsg").textContent = "Sending…";
+    try { const r = await api("/api/alert-test", {}); $("alertmsg").textContent = r.result; $("alertmsg").className = "note " + (r.ok ? "up" : "down"); }
+    catch(e){ $("alertmsg").textContent = e.message; $("alertmsg").className = "note down"; }
+    finally { $("alerttest").disabled = !(S && S.phone_alerts && S.phone_alerts.enabled); }
+  };
+  $("flatbtn").onclick = () => { $("flatconfirm").hidden = false; };
+  $("flatno").onclick = () => { $("flatconfirm").hidden = true; };
+  $("flatyes").onclick = async () => { $("flatconfirm").hidden = true; try { await api("/api/flatten", {}); $("ctlmsg").textContent = "Sold everything."; load(); } catch(e){ $("ctlmsg").textContent = e.message; } };
+
+  load();
+  setInterval(load, 10000);
+
+  // ---- desktop vs phone layout (10-29) ----
+  // Wide screens get two columns: trading on the left, controls/watchlist/research on the right.
+  // DESKTOP_MIN_PX is the switch point: below it (phones, small tablets, a narrow window) it is one column.
+  const DESKTOP_MIN_PX = 1100;
+  const wide = window.matchMedia("(min-width: " + DESKTOP_MIN_PX + "px)");
+  const secs = Array.from(document.querySelectorAll("section[data-col]"));   // original (phone) order
+  let VIEW = "auto"; try { VIEW = localStorage.getItem("daydesk_view") || "auto"; } catch(e) {}
+  // jump bar (phone): one tap to any section instead of scrolling past the call feed
+  const JUMPS = [["Open now", "Open"], ["Claude's calls", "Calls"], ["Morning research", "Research"], ["The test", "Test"],
+                 ["Claude usage", "Usage"], ["Trade lab", "Lab"], ["What Claude has learned", "Learned"],
+                 ["Strategy scorecard", "Strategies"], ["Closed trades", "Trades"], ["Watchlist", "Watchlist"], ["Controls", "Controls"]];
+  JUMPS.forEach(([head, label], i) => {
+    const sec = secs.find(x => (x.querySelector("h2") || {}).textContent.startsWith(head));
+    if (!sec) return;
+    sec.id = sec.id || "sec-" + i;
+    const a = document.createElement("a"); a.href = "#" + sec.id; a.textContent = label;
+    a.addEventListener("click", e => { e.preventDefault(); sec.scrollIntoView({behavior: "smooth", block: "start"}); });
+    $("jump").appendChild(a);
+  });
+  function layout(){
+    const desk = VIEW === "desktop" || (VIEW === "auto" && wide.matches);
+    document.body.classList.toggle("desk", desk);
+    if (desk) secs.forEach(sec => $(sec.dataset.col === "side" ? "col-side" : "col-main").appendChild(sec));
+    else secs.forEach(sec => $("app").insertBefore(sec, $("cols")));
+    document.querySelectorAll(".view button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.view === VIEW)));
+  }
+  document.querySelectorAll(".view button").forEach(b => b.addEventListener("click", () => {
+    VIEW = b.dataset.view; try { localStorage.setItem("daydesk_view", VIEW); } catch(e) {}
+    layout();
+  }));
+  if (wide.addEventListener) wide.addEventListener("change", layout); else wide.addListener(layout);
+  layout();
+})();
+</script>
+</body>
+</html>
