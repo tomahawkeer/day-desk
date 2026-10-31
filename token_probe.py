@@ -1,5 +1,7 @@
 """TOKEN_PROBE.bat — measure what each Claude Code call drags in (2026-10-31).
 
+CORRECTED 10-31 evening: every variant below runs with the desk's `--tools ""`, which also removes ToolSearch, so all
+MCP/connector tools load upfront; that, not plain `claude -p` (~60k), is what variant A measured.
 A one-line health check on tomahawkeer's PC measured 429,398 input tokens: Claude Code loads its whole interactive
 setup (connectors / MCP servers, skills, memory files, its coding system prompt) into every desk call. This sends
 the SAME tiny health check five ways, each stripping one more layer, and prints tokens, the API-equivalent cost
