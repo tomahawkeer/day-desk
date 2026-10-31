@@ -78,8 +78,12 @@ A test pins it.
    `data/lab_report.json` once per close-out for the page. Every table says HINDSIGHT on n trades; picking a stop
    multiplier from it is curve-fitting. Prompt/playbook changes are part of the tested system per the pre-reg; money
    limits are not touched. A lab error is logged and never blocks a trading call (test).
-16. **Lean Claude calls (10-31, config `claude_lean`).** As Claude Code normally starts, `claude -p` loaded tomahawkeer's whole
-   interactive setup into EVERY desk call: a one-line health check measured 429,388 input tokens (426k = connectors /
+16. **Lean Claude calls (10-31, config `claude_lean`).** As the desk started it (`claude -p --tools ""`), Claude Code loaded
+   tomahawkeer's whole interactive setup into EVERY desk call. CORRECTED 10-31 evening (GitHub reply on claude-code#106413,
+   docs "Configure tool search"): the 426k was caused by `--tools ""` itself — it also removes ToolSearch, so every
+   MCP/connector tool definition loads UPFRONT instead of deferred; a plain `claude -p` is ~60k. Every probe variant
+   carried `--tools ""`. Lesson: `--tools ""` is NOT "lighter" with connectors on; always pair it with
+   `--strict-mcp-config` (or `ENABLE_CLAUDEAI_MCP_SERVERS=false` to keep other MCP servers). Original note: a one-line health check measured 429,388 input tokens (426k = connectors /
    MCP servers). TOKEN_PROBE.bat measured five variants on his PC; variant E (`--strict-mcp-config`,
    `--disable-slash-commands`, six `CLAUDE_CODE_DISABLE_*` env switches, the desk's own system prompt via
    `--system-prompt-file`) answered correctly with 600 tokens on the same SUBSCRIPTION login. Research keeps Claude

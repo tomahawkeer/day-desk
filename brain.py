@@ -389,7 +389,9 @@ class ClaudeCLIBrain:
 
     def __init__(self, exe: str, model: str, timeout_s: int = 150, lean: dict | None = None):
         self.exe, self.model, self.timeout_s = exe, model, timeout_s
-        # LEAN MODE (10-31, config "claude_lean"). A one-line health check measured 429,398 input tokens on tomahawkeer's
+        # LEAN MODE (10-31, config "claude_lean"). CORRECTED 10-31 evening: the bloat came from `--tools ""` (below),
+        # which also removes ToolSearch, so all MCP/connector tools load upfront; never use --tools "" without
+        # --strict-mcp-config. A one-line health check measured 429,398 input tokens on tomahawkeer's
         # PC: Claude Code was loading its whole interactive context (connectors/MCP servers, skills, memory files,
         # its coding system prompt) into every desk call. --bare would fix it but needs an API key, which tomahawkeer's rule
         # forbids, so the lean switches below keep the subscription login and strip the rest. TOKEN_PROBE.bat
