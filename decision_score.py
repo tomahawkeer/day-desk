@@ -36,7 +36,7 @@ Rulings (10-31 build):
   - With fewer than MIN_BOOT_DAYS (5) days, a day-block CI that excludes 0 is NOT called for either side: 3 days give
     only 10 distinct resamples, so the interval is far too coarse (10-31 real data: [-0.90, -0.45] around -0.47).
   - The yardstick constants live here, not in config.json (like lab.py's MULTS): they are a fixed measuring stick,
-    not a trading setting Jeff tunes.
+    not a trading setting tomahawkeer tunes.
   - p_win calibration: outcome 1 = neutral bracket hit the target first, 0 = stop or flatten. Bins 0-40, 40-60,
     60-100 (the top bin includes 100). Shown once >= 10 scored rows carry p_win.
 """

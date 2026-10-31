@@ -8,7 +8,7 @@
 <title>Day Desk</title>
 <style>
 :root{
-  /* Dark only (Jeff 10-29: "make the webpage darkmode"), whatever the phone's own setting is. */
+  /* Dark only (tomahawkeer 10-29: "make the webpage darkmode"), whatever the phone's own setting is. */
   --bg:#0f151c; --panel:#161e27; --ink:#e4eaf0; --muted:#94a3b3; --line:#27333f;
   --accent:#6aa5ec; --up:#3fbf7f; --down:#f0705f; --warn:#e0a33a; --chip:#1f2a36;
   --on-accent:#0b1118;
@@ -70,7 +70,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .learn ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
 .learn li .ev{display:block;font-size:.78rem;color:var(--muted)}
 .tag.solid{color:var(--up)}
-/* phone: jump bar to every section + a capped call feed, so nothing needs a long scroll (Jeff 10-31) */
+/* phone: jump bar to every section + a capped call feed, so nothing needs a long scroll (tomahawkeer 10-31) */
 .jump{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;padding:8px 0;margin:0 0 4px;background:var(--bg);scrollbar-width:none}
 .jump::-webkit-scrollbar{display:none}
 .jump a{flex:none;font-family:var(--mono);font-size:.8rem;padding:6px 11px;border-radius:999px;background:var(--chip);color:var(--ink);text-decoration:none}
@@ -109,6 +109,32 @@ body.desk h1{font-size:1.7rem}
 .alerts ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
 .alerts code{font-family:var(--mono);font-size:.85rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
 .alerts a{color:var(--accent);overflow-wrap:anywhere}
+.alerts details summary{cursor:pointer;font-size:.85rem;color:var(--muted)}
+.alerts details[open] summary{margin-bottom:6px}
+/* phone, less scrolling (10-31 weekend; tomahawkeer: "a lot of scrolling"). Long reference sections fold to a one-line
+   summary (tap the heading); "why" text moves to a full-width line under its row instead of a narrow column that made
+   every row 400+ px tall; closed trades show the latest 15. Desktop is unchanged. */
+.fold-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.fold-h .fsum{font-family:var(--mono);font-size:.72rem;letter-spacing:0;text-transform:none;color:var(--muted);text-align:right}
+.fold-h .chev{display:inline-block;width:1em;transition:transform .15s}
+body:not(.desk) .fold-h{cursor:pointer;padding:6px 0;margin:0}
+body:not(.desk) section.folded .chev{transform:rotate(-90deg)}
+body.desk .fold-h .chev,body.desk .fold-h .fsum{display:none}
+body:not(.desk) section.folded > :not(h2){display:none}
+th.why{white-space:nowrap}
+body:not(.desk) th.why,body:not(.desk) td.why{display:none}
+tr.prow{display:none}
+body:not(.desk) tr.prow{display:table-row}
+body:not(.desk) tr.has-prow td{border-bottom:0;padding-bottom:2px}
+tr.prow td{padding-top:0;font-size:.8rem;color:var(--muted)}
+body:not(.desk) .learn li .ev{display:none}
+body:not(.desk) .learn li{cursor:pointer}
+body:not(.desk) .learn li.open .ev{display:block}
+body:not(.desk) .ph-hide{display:none}
+body:not(.desk) .clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;cursor:pointer}
+body:not(.desk) .learn li .clamp{-webkit-line-clamp:2}
+body:not(.desk) .clamp.open,body:not(.desk) .learn li.open .clamp{display:block}
+@media (prefers-reduced-motion: reduce){.fold-h .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -174,7 +200,7 @@ body.desk h1{font-size:1.7rem}
 
   <section data-col="main">
     <h2>Open now</h2>
-    <div class="box tbl"><table><thead><tr><th>Stock</th><th>Shares</th><th>Bought</th><th>Last</th><th>P&amp;L</th><th>Stop</th><th>Target</th><th>Why</th></tr></thead><tbody id="t-open"></tbody></table></div>
+    <div class="box tbl"><table><thead><tr><th>Stock</th><th class="ph-hide">Shares</th><th>Bought</th><th>Last</th><th>P&amp;L</th><th>Stop</th><th class="ph-hide">Target</th><th class="why">Why</th></tr></thead><tbody id="t-open"></tbody></table></div>
   </section>
 
   <section data-col="main">
@@ -199,7 +225,7 @@ body.desk h1{font-size:1.7rem}
 
   <section data-col="main">
     <h2>Strategy scorecard</h2>
-    <div class="box tbl"><table><thead><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>Total P&amp;L</th><th>Avg / trade</th><th>Claude's verdict</th></tr></thead><tbody id="t-score"></tbody></table></div>
+    <div class="box tbl"><table><thead><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>Total P&amp;L</th><th class="ph-hide">Avg / trade</th><th class="why">Claude's verdict</th></tr></thead><tbody id="t-score"></tbody></table></div>
   </section>
 
   <section data-col="main">
@@ -214,7 +240,7 @@ body.desk h1{font-size:1.7rem}
 
   <section data-col="main">
     <h2>Closed trades</h2>
-    <div class="box tbl"><table><thead><tr><th>Day</th><th>In → out</th><th>Strategy</th><th>Stock</th><th>Shares</th><th>Bought</th><th>Sold</th><th>P&amp;L</th><th>Why in</th><th>Why out</th></tr></thead><tbody id="t-closed"></tbody></table></div>
+    <div class="box tbl"><table><thead><tr><th class="ph-hide">Day</th><th>In → out</th><th class="ph-hide">Strategy</th><th>Stock</th><th class="ph-hide">Shares</th><th class="ph-hide">Bought</th><th class="ph-hide">Sold</th><th>P&amp;L</th><th class="why">Why in</th><th class="why">Why out</th></tr></thead><tbody id="t-closed"></tbody></table></div>
   </section>
   <div class="cols" id="cols"><div class="col main" id="col-main"></div><div class="col side" id="col-side"></div></div>
   <p class="note" id="foot">Paper money only. No broker is connected.</p>
@@ -224,7 +250,14 @@ body.desk h1{font-size:1.7rem}
 (function(){
   const $ = id => document.getElementById(id);
   let KEY = ""; try { KEY = localStorage.getItem("daydesk_key") || ""; } catch(e) {}
-  let S = null;
+  let S = null, SHOWALL = false;
+  const OPENED = new Set();                 // tapped-open text survives the 10 s refresh (keyed by its first words)
+  const okey = el => el.textContent.trim().slice(0, 80);
+  function reopen(){
+    document.querySelectorAll(".clamp").forEach(c => { if (OPENED.has(okey(c))) (c.closest(".learn li") || c).classList.add("open"); });
+  }
+  const SUMS = {};
+  function setSum(title, text){ SUMS[title] = text; const el = document.querySelector('[data-fsum="' + title + '"]'); if (el) el.textContent = text || ""; }
   const tz = {timeZone:"America/New_York"};
   const usd = (x, s) => x == null || !isFinite(x) ? "—" : (s && x > 0 ? "+" : x < 0 ? "−" : "") + "$" + Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   const pct = x => x == null || !isFinite(x) ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2) + "%";
@@ -276,10 +309,10 @@ body.desk h1{font-size:1.7rem}
       const lv = al.levels || {}, grp = w => Object.keys(lv).filter(k => lv[k] === w).map(k => k.replace("_", " ")).join(", ") || "none";
       $("alertsinfo").innerHTML = !al.set_up ? '<p class="note">Alerts are not running in this copy of Day Desk.</p>'
         : (al.enabled ? "" : '<p class="note">Turned off: set <code>"enabled": true</code> under <code>alerts</code> in config.json, then restart RUN.bat.</p>') +
-          `<ol><li>Install <b>ntfy</b> from the app store (free, no account).</li>
+          `<details${al.enabled ? "" : " open"}><summary>How to subscribe, and what rings</summary><ol><li>Install <b>ntfy</b> from the app store (free, no account).</li>
            <li>Open it, tap <b>+</b>, and subscribe to topic <code>${esc(al.topic)}</code>${al.host && al.host !== "ntfy.sh" ? " on server <code>" + esc(al.server) + "</code>" : ""}.</li>
            <li>Or, on this phone, tap <a href="${esc(al.subscribe_url)}">${esc(al.subscribe_url)}</a> to open it in the app.</li></ol>
-           <p class="note">Loud (rings): ${esc(grp("loud"))}. Normal: ${esc(grp("normal"))}. Silent: ${esc(grp("silent"))}. Off: ${esc(grp("off"))}. Change them under <code>alerts</code> in config.json. Keep the topic to yourself: anyone who has it can read the alerts.</p>` +
+           <p class="note">Loud (rings): ${esc(grp("loud"))}. Normal: ${esc(grp("normal"))}. Silent: ${esc(grp("silent"))}. Off: ${esc(grp("off"))}. Change them under <code>alerts</code> in config.json. Keep the topic to yourself: anyone who has it can read the alerts.</p></details>` +
           (al.last_error ? `<p class="note down">Last send failed: ${esc(al.last_error)}</p>` : "");
     }
     // watchlist
@@ -297,7 +330,7 @@ body.desk h1{font-size:1.7rem}
     $("locknote").textContent = lkl.map(([k, v]) => k + ": " + v).join(" · ");
     if (!s.watchlist.length) ch.innerHTML = '<span class="note">Empty. Add a ticker so Claude has something to trade.</span>';
     // open
-    $("t-open").innerHTML = s.positions.length ? s.positions.map(p => `<tr><td class="sym">${esc(p.sym)}</td><td class="num">${p.shares}</td><td class="num">${px(p.entry)}<br><span class="note">${hm(p.entry_t)}</span></td><td class="num">${px(p.last)}</td><td class="num ${cls(p.pnl)}">${usd(p.pnl, true)}</td><td class="num">${px(p.stop)}</td><td class="num">${px(p.target)}</td><td class="why">${esc(p.why)}</td></tr>`).join("")
+    $("t-open").innerHTML = s.positions.length ? s.positions.map(p => `<tr><td class="sym">${esc(p.sym)}</td><td class="num ph-hide">${p.shares}</td><td class="num">${px(p.entry)}<br><span class="note">${hm(p.entry_t)}</span></td><td class="num">${px(p.last)}</td><td class="num ${cls(p.pnl)}">${usd(p.pnl, true)}</td><td class="num">${px(p.stop)}</td><td class="num ph-hide">${px(p.target)}</td><td class="why">${esc(p.why)}</td></tr><tr class="prow"><td colspan="5"><div class="clamp">${p.shares} sh · target ${px(p.target)} · ${esc(p.why)}</div></td></tr>`).join("").replace(/<tr>(?=<td class="sym">)/g, '<tr class="has-prow">')
       : '<tr><td colspan="8" class="empty">Nothing open.</td></tr>';
     // decisions
     $("feed").innerHTML = s.decisions.length ? s.decisions.map(d => {
@@ -307,7 +340,7 @@ body.desk h1{font-size:1.7rem}
     // research
     const R = s.research || {}, today = new Date(s.now * 1000).toLocaleDateString("en-CA", tz);
     let rh = '<div class="row" style="padding:12px;justify-content:space-between"><span class="note">' +
-      (s.research_running ? "Researching now… (takes a few minutes)" : R.day ? "From " + esc(R.day) + (R.day === today ? " (today)" : " (not today)") + (R.status && R.status !== "done" ? " · " + esc(R.status) : "") : "Runs every trading morning at 8:45 AM ET.") +
+      (s.research_running ? "Researching now… (takes a few minutes)" : R.day ? (R.preview ? "Preview for " + esc(R.day) + (R.day === today ? " (today; the 8:45 run replaces it)" : " (next session; the 8:45 run that morning replaces it)") : "From " + esc(R.day) + (R.day === today ? " (today)" : " (not today)")) + (R.status && R.status !== "done" ? " · " + esc(R.status) : "") : "Runs every trading morning at 8:45 AM ET.") +
       '</span><button class="btn ghost" id="researchbtn" type="button"' + (s.research_running ? " disabled" : "") + '>Research now</button></div>';
     if (R.backdrop) rh += '<div class="pick"><span class="k2">Market backdrop</span><p>' + esc(R.backdrop) + '</p></div>';
     (R.picks || []).forEach(pk => {
@@ -331,6 +364,7 @@ body.desk h1{font-size:1.7rem}
     } else if (P.next_read){
       const done = Math.min(100, Math.round(P.closed / P.next_read * 100));
       const rd = Math.min(100, Math.round((P.research_graded || 0) / (P.research_needed || 40) * 100));
+      setSum("The test", P.closed + " of " + P.next_read + " trades");
       $("progress").innerHTML = `<div class="gauge"><span class="k">${esc(P.read_name)} — the first real grade</span>
         <div class="big">${P.closed} of ${P.next_read} closed trades</div><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${P.next_read}" aria-valuenow="${P.closed}"><i style="width:${done}%"></i></div>
         <p class="note">${P.per_day ? P.per_day + " trades a day so far over " + P.trading_days + " trading day" + (P.trading_days === 1 ? "" : "s") + " · about " + P.est_days_left + " more trading days at this pace" : "no trades yet"}</p></div>
@@ -345,6 +379,7 @@ body.desk h1{font-size:1.7rem}
     $("p-use").textContent = todayU && todayU.calls - todayU.unmeasured > 0 ? "≈" + money(todayU.cost_usd) + " of plan use today" : "usage: measuring";
     if (ud.length){
       const wk = ud.reduce((a, d) => ({calls: a.calls + d.calls, cost: a.cost + d.cost_usd, un: a.un + d.unmeasured}), {calls: 0, cost: 0, un: 0});
+      setSum("Claude usage", todayU ? "today " + todayU.calls + " calls · ≈" + money(todayU.cost_usd) : wk.calls + " calls");
       const kinds = ["trading", "research", "review", "self-test"], kshort = {"trading": "trade", "research": "news", "review": "review", "self-test": "test"};
       $("usage").innerHTML = `<div class="gauge"><span class="k">Last ${ud.length} days</span><div class="big">${wk.calls} Claude calls · ≈${money(wk.cost)}</div>
         <p class="note">Measured from Claude Code's own report on each call${U.measured_since ? ", since " + esc(U.measured_since) : " (starts with the next call)"}. The dollars are what the same calls would cost on the paid API — <b>you pay nothing extra</b>; it's the yardstick for how much of your weekly plan the desk uses.${wk.un ? " " + wk.un + " older calls weren't measured." : ""}</p></div>
@@ -356,8 +391,9 @@ body.desk h1{font-size:1.7rem}
     const verdicts = {}; ((s.learned || {}).strategies || []).forEach(v => verdicts[v.setup] = v);
     const names = new Set((s.scorecard || []).map(r => r.setup)); Object.keys(verdicts).forEach(n => names.add(n));
     const rows = [...names].map(n => ({...((s.scorecard || []).find(r => r.setup === n) || {setup: n, trades: 0}), v: verdicts[n]}));
-    $("t-score").innerHTML = rows.length ? rows.map(r => `<tr><td class="sym">${esc(r.setup)}</td><td class="num">${r.trades}</td><td class="num">${r.trades ? r.win_rate + "%" : "—"}</td><td class="num ${cls(r.pnl)}">${r.trades ? usd(r.pnl, true) : "—"}</td><td class="num ${cls(r.avg_pct)}">${r.trades ? pct(r.avg_pct) : "—"}</td><td class="why">${r.v ? "<b>" + esc(r.v.verdict) + "</b> · " + esc(r.v.note) : "not graded yet"}</td></tr>`).join("")
+    $("t-score").innerHTML = rows.length ? rows.map(r => `<tr><td class="sym">${esc(r.setup)}</td><td class="num">${r.trades}</td><td class="num">${r.trades ? r.win_rate + "%" : "—"}</td><td class="num ${cls(r.pnl)}">${r.trades ? usd(r.pnl, true) : "—"}</td><td class="num ph-hide ${cls(r.avg_pct)}">${r.trades ? pct(r.avg_pct) : "—"}</td><td class="why">${r.v ? "<b>" + esc(r.v.verdict) + "</b> · " + esc(r.v.note) : "not graded yet"}</td></tr><tr class="prow"><td colspan="5"><div class="clamp">${r.v ? "<b>" + esc(r.v.verdict) + "</b> · " + esc(r.v.note) : "not graded yet"}</div></td></tr>`).join("").replace(/<tr>(?=<td class="sym">)/g, '<tr class="has-prow">')
       : '<tr><td colspan="6" class="empty">No strategies tried yet. Every buy is tagged with the strategy behind it, and each one is graded after the close.</td></tr>';
+    setSum("Strategy scorecard", rows.length ? rows.length + " strategies" : "");
     // trade lab (hindsight replays of the real trades; evidence for lessons, never a rule by itself)
     const LB = s.lab, SM = LB && LB.stop_multipliers;
     if (SM && SM.all){
@@ -390,13 +426,24 @@ body.desk h1{font-size:1.7rem}
         <p class="note">The scanner's rules replayed minute by minute on saved prices across every archived stock, with zero Claude calls, compared with random minutes on the same stock and day. Exploratory: a trigger is only changed after a written note and a check on later days.</p></div>`;
     }
     if (more) $("lab").insertAdjacentHTML("beforeend", more);
+    setSum("Trade lab", SM && SM.all ? SM.all.n + " trades replayed" : "");
     // learned
     const L = s.learned || {};
-    $("learned").innerHTML = (L.lessons && L.lessons.length) ? `<div class="learn"><p class="note">After the close on ${esc(L.day)}:</p><p style="margin:0">${esc(L.summary)}</p><ol>${L.lessons.map(l => `<li>${esc(l.rule)}<span class="tag ${l.status === "solid" ? "solid" : ""}">${esc(l.status)}</span><span class="ev">${esc(l.evidence)}</span></li>`).join("")}</ol></div>`
+    $("learned").innerHTML = (L.lessons && L.lessons.length) ? `<div class="learn"><p class="note">After the close on ${esc(L.day)}:</p><p style="margin:0" class="clamp">${esc(L.summary)}</p><ol>${L.lessons.map(l => `<li><span class="clamp">${l.id ? "<b>" + esc(l.id) + "</b> " : ""}${esc(l.rule)}</span><span class="tag ${l.status === "solid" ? "solid" : ""}">${esc(l.status)}</span><span class="ev">${esc(l.evidence)}</span></li>`).join("")}</ol></div>`
       : '<div class="learn"><p class="note">Nothing yet. After each day\'s 3:45 PM close-out, Claude reviews every trade and every pass against what the stock did next, and writes its playbook here. Every decision after that reads it.</p></div>';
+    $("learned").querySelectorAll(".learn li").forEach(li => li.onclick = () => {
+      const k = okey(li.querySelector(".clamp") || li); li.classList.toggle("open") ? OPENED.add(k) : OPENED.delete(k); });
+    setSum("What Claude has learned", L.lessons && L.lessons.length ? L.lessons.length + " rules · " + L.lessons.filter(l => l.status === "solid").length + " solid" : "");
     // closed
-    $("t-closed").innerHTML = s.trades.length ? s.trades.map(t => `<tr><td>${day(t.exit_t)}</td><td class="num" style="text-align:left">${hm(t.entry_t)} → ${hm(t.exit_t)}</td><td>${esc(t.setup || "—")}</td><td class="sym">${esc(t.sym)}</td><td class="num">${t.shares}</td><td class="num">${px(t.entry)}</td><td class="num">${px(t.exit)}</td><td class="num ${cls(t.pnl)}">${usd(t.pnl, true)}<br><span class="note">${pct(t.pnl_pct)}</span></td><td class="why">${esc(t.why_in)}</td><td class="why">${esc(t.why_out)}</td></tr>`).join("")
+    const phone = !document.body.classList.contains("desk"), CAP = 15;
+    const shown = phone && !SHOWALL ? s.trades.slice(0, CAP) : s.trades;
+    $("t-closed").innerHTML = s.trades.length ? shown.map(t => `<tr class="has-prow"><td class="ph-hide">${day(t.exit_t)}</td><td class="num" style="text-align:left;white-space:nowrap">${hm(t.entry_t)} → ${hm(t.exit_t)}</td><td class="ph-hide">${esc(t.setup || "—")}</td><td class="sym">${esc(t.sym)}</td><td class="num ph-hide">${t.shares}</td><td class="num ph-hide">${px(t.entry)}</td><td class="num ph-hide">${px(t.exit)}</td><td class="num ${cls(t.pnl)}">${usd(t.pnl, true)}<br><span class="note">${pct(t.pnl_pct)}</span></td><td class="why">${esc(t.why_in)}</td><td class="why">${esc(t.why_out)}</td></tr><tr class="prow"><td colspan="5"><div class="clamp">${day(t.exit_t)} · ${esc(t.setup || "untagged")} · ${t.shares} sh ${px(t.entry)} → ${px(t.exit)} · <b>In:</b> ${esc(t.why_in)} · <b>Out:</b> ${esc(t.why_out)}</div></td></tr>`).join("") +
+        (phone && s.trades.length > CAP ? `<tr><td colspan="5"><button class="btn ghost" type="button" id="showall">${SHOWALL ? "Show the latest " + CAP : "Show all " + s.trades.length}</button></td></tr>` : "")
       : '<tr><td colspan="10" class="empty">No closed trades yet.</td></tr>';
+    if ($("showall")) $("showall").onclick = () => { SHOWALL = !SHOWALL; render(); };
+    const lastT = s.trades[0];
+    setSum("Closed trades", s.trades.length ? s.trades.length + " · last " + lastT.sym + " " + usd(lastT.pnl, true) : "none yet");
+    reopen();
   }
 
   async function load(){
@@ -448,6 +495,35 @@ body.desk h1{font-size:1.7rem}
     a.addEventListener("click", e => { e.preventDefault(); sec.scrollIntoView({behavior: "smooth", block: "start"}); });
     $("jump").appendChild(a);
   });
+  // phone folding (10-31 weekend): long reference sections start folded; tap a heading to open/close; remembered
+  const FOLD_DEFAULT = ["The test", "Claude usage", "Strategy scorecard", "Trade lab", "What Claude has learned", "Closed trades"];
+  let FOLD = {}; try { FOLD = JSON.parse(localStorage.getItem("daydesk_fold") || "{}"); } catch(e) {}
+  const saveFold = () => { try { localStorage.setItem("daydesk_fold", JSON.stringify(FOLD)); } catch(e) {} };
+  document.querySelectorAll("section > h2").forEach(h => {
+    const title = FOLD_DEFAULT.find(t => h.textContent.startsWith(t));
+    if (!title) return;
+    const sec = h.parentElement;
+    const label = h.textContent;
+    h.className = "fold-h"; h.textContent = "";
+    h.setAttribute("role", "button"); h.tabIndex = 0;
+    const left = document.createElement("span"); left.innerHTML = '<span class="chev" aria-hidden="true">▾</span> ' + esc(label);
+    const sum = document.createElement("span"); sum.className = "fsum"; sum.dataset.fsum = title; sum.textContent = SUMS[title] || "";
+    h.append(left, sum);
+    const set = folded => { sec.classList.toggle("folded", folded); h.setAttribute("aria-expanded", String(!folded)); };
+    set(FOLD[title] !== undefined ? FOLD[title] : true);
+    const toggle = () => { if (document.body.classList.contains("desk")) return; const f = !sec.classList.contains("folded"); set(f); FOLD[title] = f; saveFold(); };
+    h.addEventListener("click", toggle);
+    h.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    sec.dataset.foldTitle = title;
+  });
+  document.addEventListener("click", e => {             // tap a clamped line to read all of it
+    const c = e.target.closest(".clamp"); if (c && !c.closest(".learn li")) { const k = okey(c); c.classList.toggle("open") ? OPENED.add(k) : OPENED.delete(k); }
+  });
+  $("jump").addEventListener("click", e => {             // jumping to a folded section opens it
+    const a = e.target.closest("a"); if (!a) return;
+    const sec = document.getElementById(a.getAttribute("href").slice(1));
+    if (sec && sec.classList.contains("folded")) { sec.classList.remove("folded"); FOLD[sec.dataset.foldTitle] = false; saveFold(); }
+  }, true);
   function layout(){
     const desk = VIEW === "desktop" || (VIEW === "auto" && wide.matches);
     document.body.classList.toggle("desk", desk);

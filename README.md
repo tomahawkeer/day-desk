@@ -52,7 +52,7 @@ connected and no real money moves.
   scheduled events. It picks 3 to 6 stocks worth watching, each with the catalyst, what would
   make it a buy, what would rule it out, key levels, and a **conviction** rating.
   - **High conviction** (prime for a profitable day) is **added to the watchlist
-    automatically for that day**. That's Jeff's permission, 10-28. The researcher is told to be
+    automatically for that day**. That's tomahawkeer's permission, 10-28. The researcher is told to be
     stingy: usually 0 to 2 a day.
   - Auto-added stocks come off the next morning unless still held or picked high again.
     Stocks **you** added are never removed.
@@ -83,7 +83,7 @@ connected and no real money moves.
   - stop no more than 3% away
   - no new buys after 3:30 PM, everything sold at 3:45 PM
   - 0.01% cost per side (Robinhood spread)
-  - at most 40 Claude calls a day
+  - at most 100 Claude calls a day (`max_calls_per_day`)
 - **A phone page** at port 8790 shows the scoreboard, open positions, every call Claude
   made and why, and the closed trades. It also has your watchlist editor, **Pause** and
   **Sell all**.
@@ -131,12 +131,13 @@ Tailscale rule from step 3 is what lets your phone in.
 | `data/state.json` | cash and open positions |
 | `notify.py` + `data/alerts_topic.txt` | phone push alerts through the free **ntfy** app (no account, no bill). Install ntfy from the app store, tap **+**, subscribe to the topic the page shows under **Controls → Phone alerts**, then tap **Send test alert**. Stops, targets, the daily loss limit and desk problems ring loud; a recap comes at 3:50 PM (normal); buys, sells and research arrive silently. Levels per event (loud / normal / silent / off) are under `alerts` in `config.json`. Anyone with the topic can read the alerts, so keep it to yourself |
 | `data/day_desk.log` | the running log |
-| `TEST.bat` | runs the 212 checks that pin the rules above |
+| `TEST.bat` | runs the 219 checks that pin the rules above |
 | `GRADE.bat` | the pre-registered grade. Under 60 closed trades it only shows progress (no verdict, on purpose); at 60 it prints Read 1. Also writes `data/grade_report.txt` |
 | `TRIGGER_LAB.bat` | replays the scanner's wake-up rules on every saved day vs random minutes: which triggers earn a Claude call (no Claude calls). `TRIGGER_LAB.bat --confirm-after 2026-11-06` checks a change on later days, once |
 | `DECISION_SCORE.bat` | scores every buy AND every pass Claude made with one standard trade: is its judgment adding anything? (hindsight, not the grade) |
 | `BACKFILL_30D.bat` | fills the 1-minute price archive back 30 days from Yahoo (never overwrites, never today) |
 | `TOKEN_PROBE.bat` | measures how many tokens one Claude call drags in (run after a Claude Code update) |
+| `REHEARSAL.bat` | dress rehearsal: replays a saved trading day through the whole desk with a stand-in for Claude (zero Claude calls), then prints PASS/FAIL checks. Run after any change, before a trading day |
 | `LAB.bat` | the trade lab: replays every closed trade with tighter/wider stops on its real 1-minute bars (hindsight, no Claude calls). Writes `data/lab_report.txt`; the page shows it too |
 
 ## Costs
@@ -144,8 +145,8 @@ Tailscale rule from step 3 is what lets your phone in.
 **No extra charge.** Claude is reached through Claude Code on your existing subscription.
 The program removes any `ANTHROPIC_API_KEY` from the environment before every call,
 because that variable is the one thing that would make Claude Code bill an API account
-instead. The cost is your plan's usage: the 40-calls-a-day cap in `config.json` keeps it
-modest, and the model is `opus` (Jeff 10-28), the strongest; switch to `sonnet` in `config.json` if usage runs low. Price data from
+instead. The cost is your plan's usage: the 100-calls-a-day cap in `config.json` keeps it
+modest, and the model is `opus` (tomahawkeer 10-28), the strongest; switch to `sonnet` in `config.json` if usage runs low. Price data from
 Yahoo is free.
 
 ## If something breaks

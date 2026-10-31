@@ -1,6 +1,6 @@
 """TOKEN_PROBE.bat — measure what each Claude Code call drags in (2026-10-31).
 
-A one-line health check on Jeff's PC measured 429,398 input tokens: Claude Code loads its whole interactive
+A one-line health check on tomahawkeer's PC measured 429,398 input tokens: Claude Code loads its whole interactive
 setup (connectors / MCP servers, skills, memory files, its coding system prompt) into every desk call. This sends
 the SAME tiny health check five ways, each stripping one more layer, and prints tokens, the API-equivalent cost
 and whether the answer was still right. Nothing here touches trading, the book or any money limit.
@@ -11,7 +11,7 @@ and whether the answer was still right. Nothing here touches trading, the book o
   D  C + memory/skill env switches    (no CLAUDE.md or auto memory, no bundled skills, no git/Chrome prompt sections)
   E  D + the desk's own system prompt REPLACES Claude Code's coding prompt
 
-Every variant uses Jeff's SUBSCRIPTION login (no API key: --bare is NOT used because it requires one).
+Every variant uses tomahawkeer's SUBSCRIPTION login (no API key: --bare is NOT used because it requires one).
 The winner goes into config.json as "claude_lean"; nothing changes until that is written.
 """
 from __future__ import annotations
