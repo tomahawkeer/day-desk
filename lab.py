@@ -179,6 +179,10 @@ def excursions(trade: dict, bars_for_sym: list[dict], cfg: dict | None = None) -
         "target_pct": round(_pct(target, raw), 3) if target is not None else None,
         "typical_1m_range_pct": round(typ, 4) if typ else None,
         "stop_in_typical_ranges": round(stop_pct / typ, 2) if (stop_pct is not None and typ) else None,
+        # Friction in R (10-31, claude-trading-desk's bug list): the round-trip cost as a share of the risk taken,
+        # 2 x cost x price / stop distance = 2 x cost x 100 / stop_pct. At 0.01%/side a 0.3% stop pays ~0.07 R per
+        # trade before the market moves at all; tight stops pay proportionally more. Measured, not a setting.
+        "friction_r": round(2 * COST_PER_SIDE * 100 / stop_pct, 4) if (stop_pct is not None and stop_pct > 0) else None,
         "after_max_high_pct": None, "after_min_low_pct": None, "close_at_flatten_pct": None,
         "after_hit_target": None, "stopped_then_recovered": None,
     }
@@ -288,6 +292,24 @@ def analyse(folder: str) -> list[dict]:
     return rows
 
 
+STRESS_COST_PER_SIDE = 0.0005             # the pre-reg's reported 0.05%/side stress cost (grade_read.STRESS_COST)
+
+
+def friction_summary(rows: list[dict]) -> dict:
+    """Round-trip cost in risk units across trades with a known stop: median/mean at the engine cost and at the stress
+    cost, plus the median stop width. Trades without a stop are counted, not guessed."""
+    fr = sorted(r["friction_r"] for r in rows if r.get("friction_r") is not None)
+    sp = sorted(r["stop_pct"] for r in rows if r.get("stop_pct") is not None and r["stop_pct"] > 0)
+    if not fr:
+        return {"n": 0, "n_no_stop": len(rows)}
+    k = STRESS_COST_PER_SIDE / COST_PER_SIDE
+    med = statistics.median(fr)
+    return {"n": len(fr), "n_no_stop": len(rows) - len(fr), "median_r": round(med, 4),
+            "mean_r": round(statistics.fmean(fr), 4), "max_r": round(fr[-1], 4),
+            "median_r_stress": round(med * k, 4), "median_stop_pct": round(statistics.median(sp), 3) if sp else None,
+            "cost_per_side": COST_PER_SIDE, "stress_cost_per_side": STRESS_COST_PER_SIDE}
+
+
 def lab_report(folder: str) -> dict:
     rows_all = analyse(folder)
     rows = [r for r in rows_all if not r.get("no_bars")]
@@ -306,6 +328,7 @@ def lab_report(folder: str) -> dict:
         "trades": rows,
         "stop_multipliers": {"caveat": caveat, "all": allt, "noise_check": _noise(rows, allt),
                              "first_hour": fh, "later": lt},
+        "friction": friction_summary(rows),
         "stopped_then_recovered": {"n_stops": len(stops),
                                    "n_recovered": sum(1 for r in stops if r["stopped_then_recovered"])},
         "reentry_after_stop": {"n": len(re_rows), "pnl": round(sum(r["pnl"] for r in re_rows), 2),
@@ -325,6 +348,15 @@ def _table_lines(title: str, tab: dict) -> list[str]:
         cl = f"  ({v['clamped']} clamped at the cap)" if v["clamped"] else ""
         L.append(f"    {float(m):>6.2f}x  {_money(v['pnl']):>14} (n={v['n']})  {v['stop_outs']:>3} of n={v['n']}{cl}")
     return L
+
+
+def friction_lines(fr: dict | None) -> list[str]:
+    if not fr or not fr.get("n"):
+        return ["Friction in R: no trades with a known stop yet."]
+    return [f"Friction in R (round-trip cost / risk taken; n={fr['n']} trades with a known stop): median "
+            f"{fr['median_r']:.3f} R at {fr['cost_per_side']:.2%}/side (median stop {fr['median_stop_pct']}%), worst "
+            f"{fr['max_r']:.3f} R; at the {fr['stress_cost_per_side']:.2%}/side stress cost the median would be "
+            f"{fr['median_r_stress']:.3f} R. Every trade starts this far behind; tighter stops start further behind."]
 
 
 def report_text(rep: dict) -> str:
@@ -347,8 +379,9 @@ def report_text(rep: dict) -> str:
                 aft += "  << stopped, then reached the target"
         xr = f"{r['stop_in_typical_ranges']:.1f}xR" if r["stop_in_typical_ranges"] is not None else "?xR"
         sp = f"{r['stop_pct']:.2f}%" if r["stop_pct"] is not None else "?"
+        fx = f", cost {r['friction_r']:.2f}R" if r.get("friction_r") is not None else ""
         L.append(f"  {r['day']} {r['entry_time']:>8} {r['sym']:<5} {r['setup'][:14]:<14} held {r['held_min']:>5.0f}m "
-                 f"{_money(r['pnl']):>9}  MFE {r['mfe_pct']:+.2f}% MAE {r['mae_pct']:+.2f}%  stop {sp} ({xr}) "
+                 f"{_money(r['pnl']):>9}  MFE {r['mfe_pct']:+.2f}% MAE {r['mae_pct']:+.2f}%  stop {sp} ({xr}{fx}) "
                  f"-> {r['exit_reason']}{aft}")
     L += ["", "STOP-WIDTH WHAT-IF (same entries, stop distance x multiplier, target unchanged, engine fill rules,",
           "anything open sold at 3:45)", "  !! " + sm["caveat"]]
@@ -368,6 +401,7 @@ def report_text(rep: dict) -> str:
     ra = rep["reentry_after_stop"]
     L.append(f"Re-entries within {REENTRY_WINDOW_MIN} min of a stop-out in the same stock: n={ra['n']}, total {_money(ra['pnl'])}"
              + (": " + "; ".join(ra["trades"]) if ra["trades"] else ""))
+    L += friction_lines(rep.get("friction"))
     if rep["n_no_plan"]:
         L.append(f"{rep['n_no_plan']} trade(s) had no matching buy record, so no what-if for them.")
     L += ["", f"Hindsight on {rep['n_with_bars']} trades — a clue, not proof."]
@@ -401,6 +435,7 @@ def review_facts(folder: str, day: str, max_lines: int = 25, max_chars: int = 25
     ra = rep["reentry_after_stop"]
     tail = [f"Across all {n} trades: stop x1.5 would have changed total by {_money(d15)} vs x1.0 replay ({noise_word}); "
             f"first-hour entries: n={fh['n']}, {_money(fh['actual_pnl'])}; re-entries after a stop: n={ra['n']}, {_money(ra['pnl'])}",
+            *[x for x in friction_lines(rep.get("friction")) if rep.get("friction", {}).get("n")],
             f"Hindsight on {n} trades — a clue, not proof."]
     head = [f"Trade lab facts for {day} (measured from 1-min bars; xR = stop width in typical 1-min ranges):"]
     body = lines

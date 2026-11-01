@@ -93,7 +93,18 @@
   ],
   "_research_grade_at": "Graded HIGH-conviction research picks needed before the research is graded (same pre-registration).",
   "research_grade_at": 40,
-  "_alerts": "Phone push alerts (10-31, notify.py). Free ntfy app, no account, no API key, no bill: install 'ntfy' from the app store, tap +, subscribe to the topic the page shows under Controls > Phone alerts (it lives in data/alerts_topic.txt, made once at random; anyone who knows it can read the alerts, so it is never put here or in the log). Levels per event: \"loud\" = priority 5 (rings through, for things that need you), \"normal\" = priority 3 (ordinary notification), \"silent\" = priority 2 (no sound, just lands in the app), \"off\" = not sent. Events: buy / sell = Claude bought or sold; stop / target = a resting stop or target filled; breaker = the daily loss limit just blocked new buys (once a day); desk_problem = the heartbeat verdict has not been WORKING for desk_problem_minutes (loop stuck, feed failing while the market is open, never finished starting) or a red ATTENTION banner has been up that long (10-31: e.g. Claude Code not logged in, or claude_fail_alert_after Claude calls failed in a row); recap = one end-of-day summary at recap_minute (950 = 3:50 PM, after the 3:46 review so its headline is included; if the desk starts late the recap follows the review); research = the morning picks are in. enabled: false = send nothing. server: the ntfy server. min_seconds_between: at most one message this often (others wait their turn). dedupe_seconds: the same message twice within this is dropped. tries / retry_wait_seconds: a failed send is tried this many times, waiting 2 s, 4 s ... between; then it is logged and dropped, never touching trading. timeout_seconds: per try. max_queued: messages waiting beyond this are dropped.",
+  "_token_ceiling": "Token ceiling guard (11-01, promised on anthropics/claude-code#106413). Every logged Claude call is checked: input tokens PER TURN against its kind's ceiling below (per turn because research makes many turns by design: 208,545 tokens over 20 turns on 10-31 = ~10k per turn). Over the ceiling = the decisions.jsonl row gets token_flag, the page shows an amber banner for the rest of the day, and the FIRST one each day sends one phone alert (alerts.events.token_ceiling). It never blocks or changes a trade. Where the numbers come from: the failure we are guarding against measured 429,388 input tokens for a one-line call (10-31, --tools \"\" loading every connector upfront). Normal sizes: self-test 600 tokens (lean, measured 3x on the PC); trading prompts measured in REHEARSAL 11-01 at up to 8,118 characters + 1,720 of system prompt, about 2.5k tokens (median 5,722 chars); the review prompt 11,082 + 2,408 chars, about 3.5k tokens; research ~10k per turn (measured on the PC 10-31). Each ceiling sits ~6-15x above normal and ~7-40x below the known failure, so a fuller playbook or a busy day does not ring and the 10-31 failure always does. A ceiling is a trade-off: lower catches smaller creep but rings on a long day's normal growth. enabled: false turns the guard off. keep_per_day: how many flagged calls the state file remembers per day (the count is always exact).",
+  "token_ceiling": {
+    "enabled": true,
+    "per_turn_tok_in": {
+      "trading": 30000,
+      "review": 40000,
+      "self-test": 10000,
+      "research": 60000
+    },
+    "keep_per_day": 20
+  },
+  "_alerts": "Phone push alerts (10-31, notify.py). Free ntfy app, no account, no API key, no bill: install 'ntfy' from the app store, tap +, subscribe to the topic the page shows under Controls > Phone alerts (it lives in data/alerts_topic.txt, made once at random; anyone who knows it can read the alerts, so it is never put here or in the log). Levels per event: \"loud\" = priority 5 (rings through, for things that need you), \"normal\" = priority 3 (ordinary notification), \"silent\" = priority 2 (no sound, just lands in the app), \"off\" = not sent. Events: buy / sell = Claude bought or sold; stop / target = a resting stop or target filled; breaker = the daily loss limit just blocked new buys (once a day); desk_problem = the heartbeat verdict has not been WORKING for desk_problem_minutes (loop stuck, feed failing while the market is open, never finished starting) or a red ATTENTION banner has been up that long (10-31: e.g. Claude Code not logged in, or claude_fail_alert_after Claude calls failed in a row); recap = one end-of-day summary at recap_minute (950 = 3:50 PM, after the 3:46 review so its headline is included; if the desk starts late the recap follows the review); research = the morning picks are in. token_ceiling = a Claude call read far more input tokens than its kind normally does (11-01, see _token_ceiling; first one each day only). enabled: false = send nothing. server: the ntfy server. min_seconds_between: at most one message this often (others wait their turn). dedupe_seconds: the same message twice within this is dropped. tries / retry_wait_seconds: a failed send is tried this many times, waiting 2 s, 4 s ... between; then it is logged and dropped, never touching trading. timeout_seconds: per try. max_queued: messages waiting beyond this are dropped.",
   "alerts": {
     "enabled": true,
     "server": "https://ntfy.sh",
@@ -105,7 +116,8 @@
       "breaker": "loud",
       "desk_problem": "loud",
       "recap": "normal",
-      "research": "silent"
+      "research": "silent",
+      "token_ceiling": "loud"
     },
     "desk_problem_minutes": 5,
     "claude_fail_alert_after": 3,

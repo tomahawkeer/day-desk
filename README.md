@@ -129,7 +129,7 @@ Tailscale rule from step 3 is what lets your phone in.
 | `data/auto_added.json` | which watchlist stocks the research added, and on which day |
 | `data/picks_history.jsonl` | every morning's research, so picks can be checked later |
 | `data/state.json` | cash and open positions |
-| `notify.py` + `data/alerts_topic.txt` | phone push alerts through the free **ntfy** app (no account, no bill). Install ntfy from the app store, tap **+**, subscribe to the topic the page shows under **Controls → Phone alerts**, then tap **Send test alert**. Stops, targets, the daily loss limit and desk problems ring loud; a recap comes at 3:50 PM (normal); buys, sells and research arrive silently. Levels per event (loud / normal / silent / off) are under `alerts` in `config.json`. Anyone with the topic can read the alerts, so keep it to yourself |
+| `notify.py` + `data/alerts_topic.txt` | phone push alerts through the free **ntfy** app (no account, no bill). Install ntfy from the app store, tap **+**, subscribe to the topic the page shows under **Controls → Phone alerts**, then tap **Send test alert**. Stops, targets, the daily loss limit and desk problems ring loud; a recap comes at 3:50 PM (normal); buys, sells and research arrive silently. If a Claude call suddenly reads far more input tokens than its kind normally does (the token ceiling, `token_ceiling` in `config.json`), the page shows an amber banner and the first one each day rings loud. Levels per event (loud / normal / silent / off) are under `alerts` in `config.json`. Anyone with the topic can read the alerts, so keep it to yourself |
 | `data/day_desk.log` | the running log |
 | `TEST.bat` | runs the 219 checks that pin the rules above |
 | `GRADE.bat` | the pre-registered grade. Under 60 closed trades it only shows progress (no verdict, on purpose); at 60 it prints Read 1. Also writes `data/grade_report.txt` |
@@ -137,6 +137,7 @@ Tailscale rule from step 3 is what lets your phone in.
 | `DECISION_SCORE.bat` | scores every buy AND every pass Claude made with one standard trade: is its judgment adding anything? (hindsight, not the grade) |
 | `BACKFILL_30D.bat` | fills the 1-minute price archive back 30 days from Yahoo (never overwrites, never today) |
 | `TOKEN_PROBE.bat` | measures how many tokens one Claude call drags in (run after a Claude Code update) |
+| `TOKEN_PROBE_ONE_SERVER.bat` | the same health check with exactly ONE small MCP server kept (and the connectors-off switch), to see what a single server costs |
 | `REHEARSAL.bat` | dress rehearsal: replays a saved trading day through the whole desk with a stand-in for Claude (zero Claude calls), then prints PASS/FAIL checks. Run after any change, before a trading day |
 | `LAB.bat` | the trade lab: replays every closed trade with tighter/wider stops on its real 1-minute bars (hindsight, no Claude calls). Writes `data/lab_report.txt`; the page shows it too |
 
@@ -169,4 +170,13 @@ Yahoo is free.
 - **The mailbox (mostly for Claude to use while you're at work):** put a text file with a brand-new name in
   `data\inbox\` containing one word, and the answer shows up in `data\outbox\` with the same name, in about 10 seconds:
   `ping` (alive?), `feed` (can it get prices from Yahoo right now?), `claude` (can it reach Claude on your
-  subscription? at most 5 a day), `help`. Never reuse a file name; a used name is ignored on purpose.
+  subscription? at most 5 a day), `pause` / `resume` (a kill switch: same as the page's Pause button, so no new buys
+  while open positions keep their stops and still get sold by 3:45), `help`. Never reuse a file name; a used name is
+  ignored on purpose.
+
+## Control arm (pre-registration Addendum A4, from Mon 11-02)
+Does Claude's judgment beat a two-line rule? Every time Claude is woken about a stock it doesn't hold, three "traders"
+pick from the same list: take everything (ALL), take only what a fixed rule allows (GATED: price above VWAP and
+stronger than the Nasdaq since the open), or take what Claude bought (CLAUDE). All three are scored with the same
+standard trade. It shows on the page's Trade lab panel, in `DECISION_SCORE.bat` and in `GRADE.bat`. Reported only: it
+never changes the pass/fail grade, and it only gets a reading at Read 1 (60 trades) and Read 2 (120).

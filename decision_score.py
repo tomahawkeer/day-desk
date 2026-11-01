@@ -37,6 +37,10 @@ Rulings (10-31 build):
     only 10 distinct resamples, so the interval is far too coarse (10-31 real data: [-0.90, -0.45] around -0.47).
   - The yardstick constants live here, not in config.json (like lab.py's MULTS): they are a fixed measuring stick,
     not a trading setting tomahawkeer tunes.
+  - CONTROL ARM (pre-reg Addendum A4, 10-31 evening build): see the "Addendum A4" block below. Same candidates
+    (not-held scanner decisions, buy or pass, from 11-02), same neutral bracket, three ways of choosing: ALL / GATED
+    (close > session VWAP AND stronger than QQQ since the open) / CLAUDE (buys). Reported only; grade_read.py adds the
+    pre-written reading at Read 1/Read 2.
   - p_win calibration: outcome 1 = neutral bracket hit the target first, 0 = stop or flatten. Bins 0-40, 40-60,
     60-100 (the top bin includes 100). Shown once >= 10 scored rows carry p_win.
 """
@@ -280,6 +284,219 @@ def summarize(rows: list[dict]) -> dict:
             "calibration": calibration(rows)}
 
 
+# ---------------------------------------------------------------- Addendum A4: the control arm (reported only)
+# Pre-registration Addendum A4 (written Sat 10-31 ~5:45 PM, before any data it is scored on). Three arms take from the
+# SAME candidates and are scored with the SAME neutral bracket above, so they differ only in WHICH candidates they take:
+#   ALL    = every candidate;
+#   GATED  = the fixed two-line rule: on the last FINISHED 1-minute bar at the decision time, close > session VWAP
+#            AND the stock's % since the session open > QQQ's % since its open over the same bars;
+#   CLAUDE = the candidates Claude answered "buy".
+# Reported, never graded. Between reads: running numbers only, no reading. At Read 1 / Read 2 grade_read.py adds the
+# pre-written reading (a4_reading). The rule is never changed after seeing results; a new rule = a new addendum.
+#
+# Rulings made in code before any candidate existed (10-31 evening build):
+#  - Candidate = trigger in A4_TRIGGERS, a real symbol, NOT held, answered buy or pass:
+#      pass -> result "no trade" ("holding" means the stock was held);
+#      buy  -> result "bought ..." OR "refused: ..." (Claude answered buy; the engine refusing it does not change
+#              what Claude chose, and dropping refusals would let the engine's limits edit the CLAUDE arm);
+#      anything else (hold/sell/adjust/error/skipped/"ignored: ... (held)") is not a candidate.
+#    Rows logged after this build carry held=true/false; held=true is never a candidate.
+#  - A candidate the neutral bracket cannot score (no saved bars, no bar after it before 3:45) is dropped from ALL
+#    arms (count reported), so the arms always share one candidate list.
+#  - Session = the stock's bars from 9:30 that had finished by the decision time (t + 60 <= decision t). VWAP is
+#    scanner.vwap (typical price x volume) over that session, the same formula the scanner and prompt use.
+#    QQQ uses its session bars that opened at or before the stock's last finished bar ("over the same bars").
+#  - If the gate cannot be computed (no finished stock bar, zero volume so no VWAP, no QQQ bar, a zero open) the
+#    GATED arm does NOT take that candidate; the count is reported as gate_unknown. A missing number never says yes.
+#  - Intervals: the same whole-day bootstrap as above (BOOT_N, BOOT_SEED, nearest-rank 90%). Below MIN_BOOT_DAYS the
+#    interval is shown with a "too few days" note.
+A4_START_DAY = "2026-11-02"               # Addendum A4: candidates from Mon 11-02 onward
+A4_TRIGGERS = ("momentum", "flush_bounce", "vwap_reclaim", "breakout")   # the scanner kinds named in A4
+A4_ARMS = ("ALL", "GATED", "CLAUDE")
+A4_NOTE = ("Pre-reg Addendum A4, reported only: never changes the grade. Running numbers between reads; the "
+           "pre-written reading is applied only at Read 1 and Read 2.")
+
+
+def is_a4_candidate(r: dict) -> bool:
+    if r.get("trigger") not in A4_TRIGGERS or not r.get("sym") or r.get("sym") == "-" or "t" not in r:
+        return False
+    if r.get("held") is True:
+        return False
+    res = str(r.get("result") or "")
+    if r.get("action") == "buy":
+        return res.startswith("bought") or res.startswith("refused")
+    if r.get("action") == "pass":
+        return res == "no trade"
+    return False
+
+
+def _session_finished(bars: list[dict], t: float) -> list[dict]:
+    return [b for b in sorted(bars or [], key=lambda b: b["t"])
+            if b["t"] + 60 <= t and minutes_et(b["t"]) >= lab.MARKET_OPEN_MINUTE]
+
+
+def a4_gate(bars: list[dict], qqq: list[dict], t: float) -> tuple[bool | None, dict]:
+    """The GATED arm's rule, exactly as written in Addendum A4. (True/False, detail) or (None, why) if it can't say."""
+    from scanner import vwap
+    s = _session_finished(bars, t)
+    if not s:
+        return None, {"why": "no finished stock bar"}
+    last = s[-1]
+    q = [b for b in _session_finished(qqq, t) if b["t"] <= last["t"]]
+    if not q:
+        return None, {"why": "no QQQ bar"}
+    vw = vwap(s)
+    if vw is None:
+        return None, {"why": "no volume, no VWAP"}
+    if not s[0]["o"] or not q[0]["o"]:
+        return None, {"why": "zero open price"}
+    sp = (last["c"] / s[0]["o"] - 1) * 100
+    qp = (q[-1]["c"] / q[0]["o"] - 1) * 100
+    above = last["c"] > vw
+    stronger = sp > qp
+    return (above and stronger), {"close": last["c"], "vwap": round(vw, 4), "stock_pct": round(sp, 4),
+                                  "qqq_pct": round(qp, 4), "above_vwap": above, "beats_qqq": stronger}
+
+
+def a4_candidates(folder: str, start_day: str = A4_START_DAY, end_day: str | None = None) -> tuple[list[dict], list[dict]]:
+    """(scored candidates, dropped candidates). Each scored row carries the neutral bracket, `claude` and `gated`."""
+    cfg = lab.load_config(folder)
+    cache: dict[str, dict] = {}
+    scored, dropped = [], []
+    for r in load_rows(folder):
+        if not is_a4_candidate(r):
+            continue
+        t = float(r["t"])
+        day = lab.day_of(t)
+        if day < start_day or (end_day and day > end_day):
+            continue
+        if day not in cache:
+            cache[day] = lab.load_bars(folder, day)
+        bars = cache[day].get(r["sym"]) or []
+        base = {"day": day, "time": hm(t), "t": t, "sym": r["sym"], "trigger": r["trigger"], "action": r["action"],
+                "claude": r["action"] == "buy"}
+        nb = neutral_bracket(bars, t, cfg) if bars else None
+        if nb is None:
+            dropped.append({**base, "why": "no saved bars" if not bars else "no bar after it before 3:45 / no range"})
+            continue
+        g, detail = a4_gate(bars, cache[day].get("QQQ") or [], t)
+        scored.append({**base, **nb, "gated": bool(g), "gate_known": g is not None, "gate": detail})
+    return scored, dropped
+
+
+def _arm(rows: list[dict], arm: str) -> list[dict]:
+    if arm == "ALL":
+        return rows
+    key = "gated" if arm == "GATED" else "claude"
+    return [r for r in rows if r[key]]
+
+
+def _mean_r(rows: list[dict]) -> float | None:
+    return statistics.fmean([r["r"] for r in rows]) if rows else None
+
+
+def _c_minus_g(rows: list[dict]) -> float | None:
+    c, g = _mean_r(_arm(rows, "CLAUDE")), _mean_r(_arm(rows, "GATED"))
+    return None if c is None or g is None else c - g
+
+
+def day_boot_stat(rows: list[dict], stat, n: int = BOOT_N, seed: int = BOOT_SEED) -> dict:
+    """90% interval of stat(rows) from resampling WHOLE days. Resamples where stat is None are skipped (counted)."""
+    days: dict[str, list[dict]] = {}
+    for r in rows:
+        days.setdefault(r["day"], []).append(r)
+    keys = sorted(days)
+    out = {"n_days": len(keys), "ci90": None, "resamples_used": 0, "note": ""}
+    if len(keys) < 2:
+        out["note"] = "fewer than 2 days: no interval"
+        return out
+    rng = random.Random(seed)
+    vals = []
+    for _ in range(n):
+        v = stat([r for _k in range(len(keys)) for r in days[keys[rng.randrange(len(keys))]]])
+        if v is not None:
+            vals.append(v)
+    if not vals:
+        out["note"] = "no usable resamples"
+        return out
+    vals.sort()
+    out.update(ci90=[round(_nearest_rank(vals, CI_LO), 4), round(_nearest_rank(vals, CI_HI), 4)],
+               resamples_used=len(vals),
+               note=(f"only {len(keys)} days (< {MIN_BOOT_DAYS}): interval far too coarse to read" if
+                     len(keys) < MIN_BOOT_DAYS else ""))
+    return out
+
+
+def control_arms(folder: str, start_day: str = A4_START_DAY, end_day: str | None = None) -> dict:
+    rows, dropped = a4_candidates(folder, start_day, end_day)
+    out = {"addendum": "A4", "start_day": start_day, "end_day": end_day, "note": A4_NOTE,
+           "rule": "GATED takes a candidate only if, on the last finished 1-min bar, close > session VWAP AND the "
+                   "stock's % since the open > QQQ's % since the open.",
+           "n_candidates": len(rows) + len(dropped), "n_scored": len(rows), "n_dropped": len(dropped),
+           "gate_unknown": sum(not r["gate_known"] for r in rows),
+           "days": sorted({r["day"] for r in rows}), "arms": {}, "claude_minus_gated": None, "overlap": None}
+    for arm in A4_ARMS:
+        sel = _arm(rows, arm)
+        st = group_stats(sel)
+        boot = day_boot_stat(rows, lambda s, a=arm: _mean_r(_arm(s, a)))
+        out["arms"][arm] = {"n": st["n"], "mean_r": st["mean_r"], "target_first_pct": st["target_first_pct"],
+                            "ci90": boot["ci90"], "n_days": len({r["day"] for r in sel}), "interval_note": boot["note"]}
+    d = _c_minus_g(rows)
+    b = day_boot_stat(rows, _c_minus_g)
+    out["claude_minus_gated"] = {"diff": round(d, 4) if d is not None else None, "ci90": b["ci90"],
+                                 "n_days": b["n_days"], "resamples_used": b["resamples_used"],
+                                 "interval_note": b["note"] if d is not None else "needs Claude buys AND gated candidates"}
+    both = sum(r["claude"] and r["gated"] for r in rows)
+    co = sum(r["claude"] and not r["gated"] for r in rows)
+    go = sum(r["gated"] and not r["claude"] for r in rows)
+    ne = len(rows) - both - co - go
+    out["overlap"] = {"both": both, "claude_only": co, "gated_only": go, "neither": ne,
+                      "agree_pct": round(100 * (both + ne) / len(rows), 1) if rows else None}
+    out["dropped"] = dropped[:20]
+    return out
+
+
+def a4_reading(ca: dict) -> str:
+    """The reading pre-written in Addendum A4. ONLY for Read 1 / Read 2 (grade_read.read_section)."""
+    cg = (ca or {}).get("claude_minus_gated") or {}
+    ci = cg.get("ci90")
+    if not ci:
+        return "No reading possible: " + (cg.get("interval_note") or "no interval") + "."
+    if ci[0] > 0:
+        return "Interval above 0: Claude's judgment adds something a two-line rule does not."
+    if ci[1] < 0:
+        return "Interval below 0: the two-line rule beats Claude."
+    return ("Interval straddles 0: no evidence Claude's judgment adds anything over the rule; the plan usage Claude "
+            "costs should be questioned.")
+
+
+def a4_lines(ca: dict | None) -> list[str]:
+    """Plain running numbers (no verdict words: grade_read prints these in PROGRESS ONLY too)."""
+    if not ca:
+        return ["Control arm (Addendum A4): not built yet."]
+    L = [f"CONTROL ARM (Addendum A4, from {ca['start_day']}; reported only, never part of the grade)"]
+    if not ca["n_scored"]:
+        L.append(f"  No candidates yet ({ca['n_candidates']} logged, {ca['n_dropped']} without saved bars). Candidates "
+                 "= every Claude decision on a stock not held, from a scanner wake-up, answered buy or no-buy.")
+        return L
+    L.append(f"  {ca['n_scored']} candidates over {len(ca['days'])} day(s) ({ca['n_dropped']} without saved bars left "
+             f"out of every arm; rule could not be checked on {ca['gate_unknown']}, so GATED skipped those).")
+    for arm in A4_ARMS:
+        a = ca["arms"][arm]
+        ci = f"[{_f(a['ci90'][0])}, {_f(a['ci90'][1])}]" if a["ci90"] else "n/a"
+        what = {"ALL": "every candidate", "GATED": "the two-line rule", "CLAUDE": "Claude's buys"}[arm]
+        L.append(f"  {arm:<6} ({what:<17}) n={a['n']:>3}  mean R {_f(a['mean_r']):>6}  target 1st "
+                 f"{_f(a['target_first_pct'], '.0f', unit='%'):>4}  90% range {ci}")
+    cg = ca["claude_minus_gated"]
+    ci = f"[{_f(cg['ci90'][0])}, {_f(cg['ci90'][1])}]" if cg["ci90"] else "n/a"
+    L.append(f"  CLAUDE - GATED mean R {_f(cg['diff'])}, 90% range {ci} over {cg['n_days']} day(s)"
+             + (f"  ({cg['interval_note']})" if cg["interval_note"] else ""))
+    o = ca["overlap"]
+    L.append(f"  Agreement: both took {o['both']}, only Claude {o['claude_only']}, only the rule {o['gated_only']}, "
+             f"neither {o['neither']} ({_f(o['agree_pct'], '.0f', unit='%')} the same call).")
+    return L
+
+
 def header(n: int, d: int) -> str:
     return (f"Hindsight on {n} judgments over {d} days; judgments in the same stock/hour are correlated, so effective "
             f"n is smaller. Diagnostic only — not the grade.")
@@ -292,7 +509,7 @@ def report(folder: str = HERE) -> dict:
             "yardstick": {"stop_typical_ranges": STOP_TYPICAL_RANGES, "target_r": TARGET_R,
                           "cost_per_side": COST_PER_SIDE, "note": "resembles the desk's median stop ~1.8 typical "
                           "ranges and the prompt's 1.5x rule; NOT tuned"},
-            **summarize(rows), "skipped": skipped, "rows": rows}
+            **summarize(rows), "control_arms": control_arms(folder), "skipped": skipped, "rows": rows}
 
 
 # ---------------------------------------------------------------- text
@@ -334,6 +551,7 @@ def report_text(rep: dict) -> str:
         for b in c["bins"]:
             L.append(f"  p_win {b['bin']:>6}: n={b['n']:>3}  mean p_win {_f(b['mean_p_win'], '.1f')}  "
                      f"actual target-first {_f(b['target_first_pct'], '.0f')}%  Brier {_f(b['brier'], '.3f')}")
+    L += [""] + a4_lines(rep.get("control_arms"))
     if rep["skipped"]:
         L += ["", f"Skipped {len(rep['skipped'])}: " + "; ".join(f"{s['sym']} {s['day']} {s['time']} ({s['why']})"
                                                                for s in rep["skipped"][:10])]

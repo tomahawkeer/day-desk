@@ -64,16 +64,28 @@ def build_prompt(sym: str, reason: str, bars: list[dict], qqq: list[dict], news:
                  scores: list[dict] | None = None, research: dict | None = None, earlier_today: str = "",
                  base_rates: str = "") -> str:
     last = bars[-1]["c"]
+    # Every number below is a "fact" Claude trusts. Audit 10-31 (claude-trading-desk bug list): never print a made-up
+    # value when the data can't support it - say "n/a" and why. Before this, zero volume made VWAP None and the
+    # f-string raised (the call was counted, never logged, and the rest of that tick's asks were lost); fewer than
+    # 16 QQQ bars printed "+0.00% in the last 15 minutes"; a zero open printed "+0.00% since the open"; no measurable
+    # range printed "0.00%" as the noise yardstick.
     # Noise yardstick (10-31): the stock's typical 1-minute high-low range today, so a stop can be judged in units
     # of normal wiggle instead of guessed. The trade lab measures every past stop the same way.
     rng = [(b["h"] - b["l"]) / b["o"] * 100 for b in bars if b["o"]]
     noise = sum(rng) / len(rng) if rng else 0.0
     day_open = bars[0]["o"]
     vw = vwap(bars)
-    q_line = ""
+    since_open = f"{pct(last, day_open):+.2f}% since the open" if day_open else "change since the open n/a (no open price)"
+    vw_txt = f"VWAP {vw:.2f}" if vw else "VWAP n/a (no volume recorded yet)"
+    noise_line = (f"Typical 1-minute range today: {noise:.2f}% (a stop {noise * 3:.2f}% away is about 3 normal one-minute "
+                  f"wiggles)." if noise > 0 else "Typical 1-minute range today: n/a (no measurable range yet).")
+    q_line = "Nasdaq (QQQ): no bars available right now."
     if qqq:
-        q_line = (f"Nasdaq (QQQ): {qqq[-1]['c']:.2f}, {pct(qqq[-1]['c'], qqq[0]['o']):+.2f}% since the open, "
-                  f"{pct(qqq[-1]['c'], qqq[-16]['c']) if len(qqq) >= 16 else 0:+.2f}% in the last 15 minutes.")
+        q_open = qqq[0]["o"]
+        q_since = f"{pct(qqq[-1]['c'], q_open):+.2f}% since the open" if q_open else "change since the open n/a"
+        q_15 = (f"{pct(qqq[-1]['c'], qqq[-16]['c']):+.2f}% in the last 15 minutes" if len(qqq) >= 16 and qqq[-16]["c"]
+                else f"last-15-minute change n/a (only {len(qqq)} minute(s) of QQQ bars so far)")
+        q_line = f"Nasdaq (QQQ): {qqq[-1]['c']:.2f}, {q_since}, {q_15}."
     held = book_view["positions"].get(sym)
     pos_line = "You do NOT hold it."
     if held:
@@ -83,8 +95,8 @@ def build_prompt(sym: str, reason: str, bars: list[dict], qqq: list[dict], news:
     others = ", ".join(f"{s} ({p['shares']} sh)" for s, p in book_view["positions"].items() if s != sym) or "none"
     return f"""Time now: {et_now().strftime('%a %b %d')} {hm(bars[-1]['t'])} ET.
 Stock: {sym}. Why you were woken: {reason}.
-{sym} last {last:.2f}, {pct(last, day_open):+.2f}% since the open, high {max(b['h'] for b in bars):.2f}, low {min(b['l'] for b in bars):.2f}, VWAP {vw:.2f}.
-Typical 1-minute range today: {noise:.2f}% (a stop {noise * 3:.2f}% away is about 3 normal one-minute wiggles).
+{sym} last {last:.2f}, {since_open}, high {max(b['h'] for b in bars):.2f}, low {min(b['l'] for b in bars):.2f}, {vw_txt}.
+{noise_line}
 {earlier_today}
 {base_rates}
 {q_line}
