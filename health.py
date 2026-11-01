@@ -12,6 +12,8 @@ Three ways to tell whether the desk is alive, none of which needs anyone at the 
                  ping    -> instant answer: the heartbeat plus the book
                  feed    -> the trading loop fetches prices from Yahoo right now and reports what came back
                  claude  -> one tiny Claude Code call, to prove the subscription login still works
+                 pause   -> no NEW buys (same as the page's Pause button); stops, targets and the 3:45 close-out still run
+                 resume  -> buys allowed again (same as un-pausing on the page)
                  help    -> this list
    The answer appears as data/outbox/<same name>.json, usually within `mailbox_check_seconds`.
    A name that already has an answer is never processed again, so never reuse a name.
@@ -37,6 +39,8 @@ COMMANDS = {
     "ping": "instant answer: is the program alive, is the trading loop alive, the book",
     "feed": "the trading loop fetches Yahoo prices right now and reports what came back",
     "claude": "one tiny Claude Code call on your subscription, to prove the login works",
+    "pause": "kill switch: no NEW buys (like the page's Pause button); open positions keep their stops, flat by 3:45",
+    "resume": "allow new buys again (like un-pausing on the page)",
     "help": "this list",
 }
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
@@ -44,7 +48,7 @@ log = logging.getLogger("daydesk")
 
 
 # Windows refuses to swap a file in while anyone else has it open (Notepad, a reader thread, the copy tool):
-# os.replace raises PermissionError [WinError 5]. Found 10-29 by TEST.bat on the desk PC (Linux never does this).
+# os.replace raises PermissionError [WinError 5]. Found 10-29 by TEST.bat on the desktop PC (Linux never does this).
 # So: retry for up to REPLACE_TRIES x REPLACE_WAIT_S = 2 s, which outlasts any normal read, then give up loudly.
 REPLACE_TRIES = 40
 REPLACE_WAIT_S = 0.05
@@ -143,6 +147,10 @@ class Health:
             "book_day": s.get("day"), "cash": round(s.get("cash", 0), 2),
             "open_positions": sorted(s.get("positions", {})), "watchlist": d.watchlist(),
             "research": research, "reviewed_day": s.get("reviewed_day"),
+            # 11-01 token ceiling guard: today's over-ceiling Claude calls (shown, NOT part of the verdict, so it
+            # cannot also trigger the desk_problem alert; the guard sends its own single alert).
+            "token_flags_today": (s.get("token_flags") or {}).get("count", 0)
+            if (s.get("token_flags") or {}).get("day") == today else 0,
             "how_to_read": (f"This file is rewritten every {self.beat_s} s. If it is more than a few minutes old, "
                             "Day Desk is not running (RUN.bat closed or crashed)."),
         }
@@ -201,6 +209,20 @@ class Health:
                                None, done=False)
         elif cmd == "claude":
             self.start_claude_test(name, now)
+        elif cmd in ("pause", "resume"):
+            # 10-31: a kill switch reachable from a cloud session (no page, no PC needed). Exactly the page's Pause
+            # button: it only stops NEW buys. Open positions keep their resting stops/targets and the 3:45 close-out.
+            book = self.desk.book
+            with book.lock:
+                was = bool(book.s.get("paused"))
+                book.s["paused"] = cmd == "pause"
+                book.save()
+            log.warning("mailbox %s: new buys %s (was %s)", name, "PAUSED" if cmd == "pause" else "allowed",
+                        "paused" if was else "running")
+            self._write_answer(name, cmd, now, True,
+                               ("PAUSED: no new buys until 'resume' or the page's button; open positions keep their "
+                                "stops and are sold by 3:45" if cmd == "pause" else "RESUMED: new buys allowed again")
+                               + f" (was {'paused' if was else 'running'})", {"paused": book.s["paused"]})
         else:
             self._write_answer(name, cmd, now, False, f"unknown command '{cmd}'. Try: " + ", ".join(COMMANDS), COMMANDS)
 

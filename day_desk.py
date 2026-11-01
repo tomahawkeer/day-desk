@@ -61,6 +61,13 @@ def assign_rule_ids(lessons: list[dict], previous: list[dict], last_id: int = 0)
 NOT_CLAUDE_CALLS = {"resting order", "3:45 PM close-out", "new day", "research grading", "re-entry lock"}
 
 
+def call_kind(trigger: str) -> str:
+    """Which kind of Claude call a decisions.jsonl row is: research, review, self-test, or trading (everything else).
+    Shared by the usage summary and the token ceiling guard so the two can never disagree."""
+    return {"morning research": "research", "end-of-day review": "review",
+            "self-test": "self-test"}.get(trigger, "trading")
+
+
 def write_json(path: str, obj, indent: int | None = None) -> None:
     """Write a JSON file atomically (temp file, then swap), so a reader on another thread
     can never see a half-written file."""
@@ -503,6 +510,64 @@ class Desk:
         rec.update(action="review", why=rv["summary"], result=f"playbook now has {len(rv['lessons'])} rules")
         self.record(rec)
 
+    # ---------- token ceiling guard (11-01, config "token_ceiling") ----------
+    # Promised on anthropics/claude-code#106413 (11-01, after Ben-Home's suggestion). The 10-31 bloat (a one-line
+    # call reading 429,388 input tokens because `--tools ""` loaded every connector upfront) was only found because
+    # we went looking. A Claude Code update, a new connector or a flag change could bring it back silently and eat
+    # tomahawkeer's plan in a day. Every logged Claude call is checked here: input tokens PER TURN (research makes many
+    # turns by design, so its total is big and its per-turn size is not) against its kind's ceiling. Over the
+    # ceiling -> the row carries `token_flag`, the page shows an amber banner for the rest of the day, and the FIRST
+    # flag of the day sends one phone alert. It never blocks or changes a trade.
+    def token_check(self, rec: dict) -> dict | None:
+        tc = self.cfg.get("token_ceiling") or {}
+        u = rec.get("usage")
+        if not tc.get("enabled", True) or not isinstance(u, dict) or rec.get("trigger") in NOT_CLAUDE_CALLS:
+            return None
+        kind = call_kind(rec.get("trigger", ""))
+        ceiling = (tc.get("per_turn_tok_in") or {}).get(kind)
+        if not ceiling:
+            return None
+        turns = max(1, int(u.get("turns") or 1))
+        per_turn = (u.get("tok_in") or 0) / turns
+        if per_turn <= ceiling:
+            return None
+        t = rec.get("t") or time.time()
+        day = et_now(t).date().isoformat()
+        flag = {"kind": kind, "sym": rec.get("sym", "-"), "tok_in": int(u.get("tok_in") or 0), "turns": turns,
+                "per_turn": round(per_turn), "ceiling": ceiling, "x": round(per_turn / ceiling, 1),
+                "cost_usd": u.get("cost_usd")}
+        rec["token_flag"] = flag
+        with self.book.lock:
+            tf = self.book.s.get("token_flags")
+            if not isinstance(tf, dict) or tf.get("day") != day:
+                tf = {"day": day, "count": 0, "items": [], "alerted": False}
+            tf["count"] += 1
+            tf["items"] = (tf["items"] + [{**flag, "t": t}])[-int(tc.get("keep_per_day", 20)):]
+            first = not tf["alerted"]
+            tf["alerted"] = True
+            self.book.s["token_flags"] = tf
+            self.book.save()
+        log.warning("TOKEN CEILING: %s call (%s) read %s input tokens over %s turn(s) = %s per turn, ceiling %s",
+                    kind, flag["sym"], f"{flag['tok_in']:,}", turns, f"{flag['per_turn']:,}", f"{ceiling:,}")
+        if first:
+            self.alert("token_ceiling", "Claude call used far more tokens than normal",
+                       f"A {kind} call read {flag['tok_in']:,} input tokens ({flag['per_turn']:,} per turn, "
+                       f"{flag['x']}x the {ceiling:,} ceiling). Something may be loading into every call again "
+                       f"(see CLAUDE.md rule 16). Trading carries on. Only the first one today rings.")
+        return flag
+
+    def token_banner(self, now: float | None = None) -> str:
+        """The page's amber line for today's over-ceiling calls ('' if none today)."""
+        tf = self.book.s.get("token_flags")
+        if not isinstance(tf, dict) or tf.get("day") != et_now(now or time.time()).date().isoformat() or not tf.get("count"):
+            return ""
+        last = tf["items"][-1] if tf.get("items") else {}
+        return (f"TOKEN CEILING: {tf['count']} Claude call(s) today used far more input tokens than their kind "
+                f"normally does. Latest: {last.get('kind', '?')} call, {last.get('tok_in', 0):,} tokens "
+                f"({last.get('per_turn', 0):,} per turn vs a {last.get('ceiling', 0):,} ceiling) at {hm(last.get('t', 0))}. "
+                f"Trading carries on; check whether Claude Code or its connectors changed (CLAUDE.md rule 16), "
+                f"then run TOKEN_PROBE.bat.")
+
     # ---------- phone alerts (10-31, notify.py) ----------
     def alert(self, event: str, title: str, body: str) -> None:
         """Hand one alert to the notifier. Wrapped so an alert problem can never touch trading."""
@@ -645,13 +710,15 @@ class Desk:
                 with open(path, encoding="utf-8") as f:
                     r = json.load(f)
                 keep = ("n_trades", "n_with_bars", "stop_multipliers", "stopped_then_recovered",
-                        "reentry_after_stop", "updated_t")
+                        "reentry_after_stop", "friction", "updated_t")
                 self._lab_cache = (mt, {k: r.get(k) for k in keep})
             except (OSError, ValueError):
                 return None
         out = dict(self._lab_cache[1])
         out["decisions"] = self._small_json("decision_score.json", ("header", "n", "days", "by_action",
-                                            "buy_minus_pass", "dodged_losers", "missed_winners"))
+                                            "buy_minus_pass", "dodged_losers", "missed_winners", "control_arms"))
+        if out["decisions"] and isinstance(out["decisions"].get("control_arms"), dict):
+            out["decisions"]["control_arms"].pop("dropped", None)      # page needs the summary only
         tl = self._small_json("trigger_lab.json", ("days", "rows"))
         if tl:
             tl["rows"] = [{k: r.get(k) for k in ("trigger", "fires", "per_day", "mean_r", "random_mean_r", "lift",
@@ -821,8 +888,7 @@ class Desk:
                 trig, act = r.get("trigger", ""), r.get("action", "")
                 if trig in NOT_CLAUDE_CALLS or act == "-":
                     continue                              # engine events and skipped asks: no Claude call made
-                kind = {"morning research": "research", "end-of-day review": "review",
-                        "self-test": "self-test"}.get(trig, "trading")
+                kind = call_kind(trig)
                 day = et_now(r.get("t", 0)).date().isoformat()
                 d = days.setdefault(day, {"day": day, "calls": 0, "unmeasured": 0, "cost_usd": 0.0,
                                           "tok_in": 0, "tok_out": 0, "by_kind": {}})
@@ -873,6 +939,10 @@ class Desk:
                 "research_graded": graded, "research_needed": self.cfg.get("research_grade_at", 40)}
 
     def record(self, rec: dict) -> None:
+        try:                                          # 11-01: never let the guard stop a row being logged
+            self.token_check(rec)
+        except Exception as e:
+            log.warning("token ceiling check failed: %s", e)
         with open(self.dec_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
         self.recent.append(rec)
@@ -1004,10 +1074,19 @@ class Desk:
             max_sh = self.book.max_shares(price)
             self.book.s["calls_today"] += 1
             self.book.save()
-        prompt = build_prompt(sym, reason, bars, qqq, self.feed.news(sym), view, max_sh,
-                              self.lessons().get("lessons"), scorecard(self.book.trades()),
-                              self.todays_research(now), self.earlier_today(sym, now, price),
-                              self.base_rates(kind, sym in view["positions"]))
+        try:                                          # 10-31 audit: a prompt error must be logged, not lost
+            prompt = build_prompt(sym, reason, bars, qqq, self.feed.news(sym), view, max_sh,
+                                  self.lessons().get("lessons"), scorecard(self.book.trades()),
+                                  self.todays_research(now), self.earlier_today(sym, now, price),
+                                  self.base_rates(kind, sym in view["positions"]))
+        except Exception as e:
+            log.exception("could not build the prompt for %s: %s", sym, e)
+            with self.book.lock:
+                self.book.s["calls_today"] = max(0, self.book.s["calls_today"] - 1)   # no call was made
+                self.book.save()
+            rec.update(action="-", result=f"skipped: prompt could not be built, no Claude call made ({e})"[:300])
+            self.record(rec)
+            return
         rec["v"] = self.versions()
         t_ask = time.time()
         try:
@@ -1026,6 +1105,7 @@ class Desk:
         if dec.get("p_win") is not None:
             rec["p_win"] = dec["p_win"]               # Claude's own odds, for decision_score.py calibration
         held = sym in self.book.s["positions"]
+        rec["held"] = held                            # 10-31: control arm (pre-reg A4) counts not-held decisions only
         act = dec["action"]
         if act in ("buy", "sell") and (act == "sell") == held:
             fill, fill_t, ferr = self.fresh_price(sym, now, t_ask)
@@ -1076,7 +1156,7 @@ class Desk:
                 "learned": self.lessons(), "scorecard": scorecard(trades),
                 "research": self.research(), "research_running": self.research_running,
                 "auto_added": self.auto_added(), "pick_moves": self.pick_moves,
-                "usage": self.usage_summary(), "alerts": self.alerts, "phone_alerts": self.alerts_status(),
+                "usage": self.usage_summary(), "alerts": self.alerts, "token_banner": self.token_banner(), "phone_alerts": self.alerts_status(),
                 "locks": {sym: why for sym in self.watchlist() if (why := self.cool.locked(sym, time.time()))}, "progress": self.progress(time.time()), "lab": self.lab_summary(),
             }
 

@@ -79,6 +79,8 @@ class ScriptedBrain:
     """A stand-in for Claude: random but rule-shaped answers, a 5-40 s 'thinking' delay on the simulated clock,
     the odd garbage reply or timeout. Never calls anything."""
     SETUPS = ["vwap-reclaim", "breakout-hold", "flush-reclaim", "momentum-push"]
+    BLOAT = 429_388                 # the measured 10-31 failure (--tools "" loading every connector upfront)
+    BLOATED_CALLS = (5, 9)          # these decide calls report it, so the token ceiling guard must catch them
 
     def __init__(self, clock: Clock, seed: int, picks: list[str]):
         self.c, self.rng, self.picks = clock, random.Random(seed), picks
@@ -98,6 +100,8 @@ class ScriptedBrain:
         self._think()
         self._usage = {"tok_in": 4200, "tok_new": 4200, "tok_cached": 0, "tok_out": 180, "cost_usd": 0.07,
                        "secs": 12.0, "turns": 1, "searches": 0}
+        if self.counts["decide"] in self.BLOATED_CALLS:              # 11-01: two planted 10-31-style bloated calls
+            self._usage = dict(self._usage, tok_in=self.BLOAT, tok_cached=self.BLOAT - 4200, cost_usd=0.12)
         r = self.rng.random()
         if r < 0.02:
             self.counts["timeout"] += 1
@@ -296,6 +300,13 @@ def rehearse(day: str, folder: str = HERE, seed: int = 7, restart_at: str = "12:
         ok(os.path.exists(os.path.join(D, "bars", day + ".json")), "today's bars archived")
         for name in ("lab_report.json", "decision_score.json", "trigger_lab.json"):
             ok(os.path.exists(os.path.join(D, name)), f"close-out rebuilt {name}")
+        try:                                          # 10-31 evening build: A4 control arm + friction-in-R reach the reports
+            _ds = json.load(open(os.path.join(D, "decision_score.json"), encoding="utf-8"))
+            _lr = json.load(open(os.path.join(D, "lab_report.json"), encoding="utf-8"))
+            _ok = isinstance(_ds.get("control_arms"), dict) and "arms" in _ds["control_arms"] and "friction" in _lr
+        except Exception:
+            _ok = False
+        ok(_ok, "decision score carries the A4 control arm; trade lab carries friction-in-R")
         ok(brain.counts["review"] == 1, f"end-of-day review ran once ({brain.counts['review']})")
         rp = getattr(brain, "review_prompt", "")
         ok("MEASURED FACTS" in rp and "RULE CREDIT" in rp, "the review saw MEASURED FACTS and RULE CREDIT")
@@ -315,6 +326,12 @@ def rehearse(day: str, folder: str = HERE, seed: int = 7, restart_at: str = "12:
            "a phone alert for every buy")
         ok(feed_failed_seen and desk.status.get("feed_ok") is True and "outage" not in str(desk.status.get("error")),
            "price feed failure showed, then recovered (simulated 11:00 outage)")
+        # 11-01 token ceiling guard: the planted bloated calls are flagged, nothing normal is, ONE phone alert
+        bloated = [r for r in rows if (r.get("usage") or {}).get("tok_in") == brain.BLOAT]
+        flagged = [r for r in rows if r.get("token_flag")]
+        ok(bloated and flagged == bloated and events.count("token_ceiling") == 1,
+           f"token ceiling: {len(flagged)} of {len(bloated)} planted bloated call(s) flagged, nothing else, "
+           f"{events.count('token_ceiling')} alert")
         hb = desk.health.heartbeat(clock.t)["verdict"]
         ok(hb.startswith("WORKING") or "CLAUDE CAN'T" in hb, f"heartbeat at the end: {hb[:90]}")
         ok(snapshots > 10, f"the phone page's data built {snapshots} times without error")

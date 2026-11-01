@@ -155,6 +155,7 @@ body:not(.desk) .clamp.open,body:not(.desk) .learn li.open .clamp{display:block}
   </header>
 
   <div class="box" id="alerts" role="alert" hidden style="border-color:var(--down);padding:10px 12px;margin-bottom:10px;color:var(--down)"></div>
+  <div class="box" id="tokbanner" role="status" hidden style="border-color:var(--warn);padding:10px 12px;margin-bottom:10px;color:var(--warn)"></div>
   <nav class="jump" id="jump" aria-label="Jump to section"></nav>
 
   <section>
@@ -357,6 +358,9 @@ body:not(.desk) .clamp.open,body:not(.desk) .learn li.open .clamp{display:block}
     const AL = s.alerts || [];
     $("alerts").hidden = !AL.length;
     $("alerts").innerHTML = AL.map(a => "⚠ " + esc(a)).join("<br>");
+    // token ceiling guard (11-01): amber, not red - it never stops trading, it says plan usage looks wrong today
+    $("tokbanner").hidden = !s.token_banner;
+    $("tokbanner").textContent = s.token_banner ? "⚠ " + s.token_banner : "";
     // the test (progress only: the pre-registration forbids a verdict before the read)
     const P = s.progress || {};
     if (!s.progress){
@@ -403,6 +407,7 @@ body:not(.desk) .clamp.open,body:not(.desk) .learn li.open .clamp{display:block}
       $("lab").innerHTML = `<div class="gauge"><p class="note">Every closed trade replayed on its real 1-minute bars with the stop set tighter or wider (same entry, same target, out by 3:45). "Actual" is what really happened; the ×1 column is the same replay with the stop it really used. Rebuilt after every close.</p></div>
         <div class="tbl"><table class="utbl"><thead><tr><th>Trades</th><th>Actual</th>${mults.map(m => "<th>stop ×" + m + "</th>").join("")}</tr></thead><tbody>${row("All", SM.all)}${row("First hour", SM.first_hour)}${row("Later", SM.later)}</tbody></table></div>
         <div class="gauge"><p class="note">${sr.n_stops != null ? `<b>${sr.n_recovered} of ${sr.n_stops}</b> stop-outs later reached the original target before 3:45. ` : ""}${rs.n ? `<b>${rs.n}</b> re-entries within an hour of a stop-out in the same stock: ${usd(rs.pnl, true)} total.` : "No quick re-entries after a stop yet."}</p>
+        ${LB.friction && LB.friction.n ? `<p class="note" style="margin-top:6px">Costs eat <b>${Number(LB.friction.median_r).toFixed(2)} R</b> of a typical trade before the price moves (round trip at 0.01%/side, median stop ${LB.friction.median_stop_pct}%); ${Number(LB.friction.median_r_stress).toFixed(2)} R at the 0.05% stress cost. Tighter stops pay more.</p>` : ""}
         <p class="note" style="margin-top:6px">⚠ ${esc(SM.caveat || "")}${nc.verdict ? " Noise check: " + esc(nc.verdict) + "." : ""} Claude reads these numbers in its end-of-day review; they can suggest a lesson, never prove one.</p></div>`;
     } else {
       $("lab").innerHTML = '<div class="gauge"><p class="note">Builds after the first close-out with saved bars. Replays every trade with tighter and wider stops so lessons rest on numbers, not hunches.</p></div>';
@@ -416,6 +421,23 @@ body:not(.desk) .clamp.open,body:not(.desk) .learn li.open .clamp{display:block}
         <div class="tbl"><table class="utbl"><thead><tr><th></th><th>n</th><th>avg R</th><th>hit target</th></tr></thead><tbody>
         ${["buy", "pass"].filter(k => ba[k]).map(k => `<tr><td>${k === "buy" ? "Bought" : "Passed"}</td><td class="num">${ba[k].n}</td><td class="num ${cls(ba[k].mean_r)}">${r2(ba[k].mean_r)}</td><td class="num">${ba[k].target_first_pct == null ? "—" : ba[k].target_first_pct + "%"}</td></tr>`).join("")}</tbody></table></div>
         <p class="note">Every time Claude was woken, the same standard trade is replayed from that minute, so buys and passes are judged by one yardstick. If passes do as well as buys, Claude's filter isn't adding anything yet. Buys − passes: ${r2(bp.diff)} R → ${esc(bp.verdict || "")}. Passes that would have hit the stop: ${DS.dodged_losers ?? "—"}; would have hit the target: ${DS.missed_winners ?? "—"}.</p></div>`;
+    }
+    // control arm (pre-reg Addendum A4): same candidates, same yardstick, three ways of choosing — reported only
+    const CA = DS && DS.control_arms;
+    if (CA){
+      const r2 = x => x == null ? "—" : (x > 0 ? "+" : "") + Number(x).toFixed(2);
+      const ci = c => c ? "[" + r2(c[0]) + ", " + r2(c[1]) + "]" : "—";
+      const what = {ALL: "Every candidate", GATED: "Two-line rule", CLAUDE: "Claude's buys"};
+      const cg = CA.claude_minus_gated || {}, ov = CA.overlap || {};
+      more += `<div class="gauge" id="ctlarm"><span class="k">Control arm — does Claude beat a two-line rule? (from ${esc(CA.start_day || "")})</span>`;
+      if (CA.n_scored){
+        more += `<div class="tbl"><table class="utbl"><thead><tr><th>Arm</th><th>n</th><th>avg R</th><th>hit target</th><th class="ph-hide">90% range</th></tr></thead><tbody>
+        ${["ALL", "GATED", "CLAUDE"].map(k => { const a = (CA.arms || {})[k] || {}; return `<tr><td>${what[k]}</td><td class="num">${a.n ?? "—"}</td><td class="num ${cls(a.mean_r)}">${r2(a.mean_r)}</td><td class="num">${a.target_first_pct == null ? "—" : a.target_first_pct + "%"}</td><td class="num ph-hide">${ci(a.ci90)}</td></tr>`; }).join("")}</tbody></table></div>
+        <p class="note">Claude − rule: <b class="${cls(cg.diff)}">${r2(cg.diff)} R</b>, 90% range ${ci(cg.ci90)}${cg.interval_note ? " (" + esc(cg.interval_note) + ")" : ""}. Same call ${ov.agree_pct == null ? "—" : ov.agree_pct + "%"} of the time (both ${ov.both}, only Claude ${ov.claude_only}, only the rule ${ov.gated_only}).</p>`;
+      } else {
+        more += `<p class="note">No candidates yet — counting starts ${esc(CA.start_day || "")}.</p>`;
+      }
+      more += `<p class="note">Every time Claude is woken about a stock it doesn't hold, three "traders" choose from the same list: take everything, take only what the rule allows (price above VWAP and stronger than the Nasdaq since the open), or take what Claude bought. All three are scored with the same standard trade. Running numbers only — the pre-written reading is applied at Read 1 (60 trades). Never changes the grade.</p></div>`;
     }
     const TG = LB && LB.triggers;
     if (TG && TG.rows && TG.rows.length){

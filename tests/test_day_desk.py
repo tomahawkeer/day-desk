@@ -641,7 +641,7 @@ def test_mailbox_ping_help_unknown_and_never_twice(tmp_path):
     a = _answer(d, "ping-0742.txt")
     assert a["ok"] and a["done"] and a["detail"]["alive"] and a["command"] == "ping"
     _ask(d, "help-1.txt", "HELP")
-    assert set(_answer(d, "help-1.txt")["detail"]) == {"ping", "feed", "claude", "help"}
+    assert set(_answer(d, "help-1.txt")["detail"]) == {"ping", "feed", "claude", "pause", "resume", "help"}
     _ask(d, "x-1.txt", "launch the rockets")
     assert not _answer(d, "x-1.txt")["ok"]
     os.remove(d.health._answer_path("ping-0742.txt"))   # even with the answer gone, a used name is ignored
@@ -730,7 +730,7 @@ def test_api_ping(tmp_path):
 
 
 def test_write_json_survives_windows_file_lock(tmp_path, monkeypatch):
-    """Windows: os.replace fails while another reader has the file open (TEST.bat on the desk PC, 10-29)."""
+    """Windows: os.replace fails while another reader has the file open (TEST.bat on the desktop PC, 10-29)."""
     import health
     real, calls = os.replace, {"n": 0}
 

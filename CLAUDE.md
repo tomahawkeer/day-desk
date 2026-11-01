@@ -30,7 +30,7 @@ A test pins it.
 3. **Every threshold is a named, commented setting in config.json.** No magic numbers in logic.
 4. **Every Claude call is logged** in `data/decisions.jsonl` with the trigger, the answer and the result, including
    refusals and errors.
-5. Run `TEST.bat` after any change (219 tests as of the 10-31 weekend build). Run `REHEARSAL.bat` too (rule 23).
+5. Run `TEST.bat` after any change (252 tests as of the 11-01 Sunday build). Run `REHEARSAL.bat` too (rule 23).
 6. yfinance is unofficial: any feed failure must show on the page (red pill) and be retried, never be silent.
 7. **Never add an API key or any separately billed service.** tomahawkeer (10-28): "im not getting charged additionally and separately".
 8. **It learns from its own record (tomahawkeer 10-28: "if you use a strategy to test and it works or doesn't work, you record the
@@ -155,3 +155,36 @@ A test pins it.
    prompt, and asks a buy to say what makes this case better than the usual one. Prompt change = part of the tested
    system (pre-reg). Note: `usage.searches` is NOT reliable for Claude Code's WebSearch (reported 0 on a research run
    that searched 20 turns); use `turns`.
+
+27. **Control arm, prompt facts, friction, kill switch (10-31 evening build, `tests/test_control_arm.py`).**
+   (a) Pre-reg **Addendum A4** in `decision_score.control_arms()`: candidates = Claude decisions on a NOT-held stock from
+   a scanner trigger (momentum/flush_bounce/vwap_reclaim/breakout), answered buy (bought OR refused) or pass ("no
+   trade"), from 11-02; arms ALL / GATED (last finished bar: close > session VWAP AND % since open > QQQ's over the same
+   bars; can't compute = not taken, counted) / CLAUDE (buys); same neutral bracket; per-arm n, mean R, target-first %,
+   90% day-bootstrap interval; CLAUDE − GATED with interval; overlap. Rows now log `held`. Shown on the Trade lab panel
+   (`#ctlarm`), in decision_score.txt, and in GRADE.bat: running numbers only below 60 trades (no verdict words, test),
+   plus the A4 reading inside each read. Never changes PASS/FAIL. The rule is frozen; a new rule = a new addendum.
+   (b) `build_prompt` never prints a made-up fact: VWAP with zero volume, QQQ with < 16 bars, a zero open, no measurable
+   range all say "n/a" and why. A prompt that still fails to build is logged as a skipped ask (action "-"), and the
+   call is not counted (before: TypeError, call counted, nothing logged, rest of the tick's asks lost). Known and left
+   alone: the scanner's momentum trigger treats QQQ < 16 bars as 0% (a scanner rule; the trigger lab replays the same).
+   (c) Friction in R in the trade lab: round-trip cost / stop distance per trade + median (and at the 0.05% stress
+   cost) in lab.txt, the review's MEASURED FACTS and the page. (d) Mailbox `pause` / `resume` = the page's Pause
+   button from a cloud session (no new buys; stops and the 3:45 close-out still run).
+
+28. **Token ceiling guard + one-server probe (11-01 Sunday build; both promised publicly on claude-code#106413 to
+   Ben-Home).** (a) `Desk.token_check()` runs inside `record()` on every Claude-call row (engine rows and rows without
+   usage are skipped; a guard error never stops the row being logged): input tokens PER TURN vs
+   `token_ceiling.per_turn_tok_in[kind]` (trading 30k, review 40k, self-test 10k, research 60k; normal is ~2.5k /
+   ~3.5k / 600 / ~10k per turn, the 10-31 failure was 429,388). Over = row gets `token_flag`, state.json
+   `token_flags` (per day, survives a restart), amber page banner (`#tokbanner`, `snapshot.token_banner`), heartbeat
+   `token_flags_today` (NOT in the verdict, so desk_problem doesn't ring twice), and ONE phone alert per day
+   (`alerts.events.token_ceiling`, loud). It never blocks or changes a trade. `call_kind()` is shared with
+   `usage_summary`. Tests `tests/test_token_ceiling.py` (mutation-checked); REHEARSAL plants two 429k calls and checks
+   both flagged, nothing else, one alert. (b) `TOKEN_PROBE_ONE_SERVER.bat` = `token_probe.py B E F G H`: F = B +
+   `--mcp-config <one server>` (Ben-Home's missing row), G = E + the same, H = `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+   only. The one server is `probe_mcp_server.py` (stdlib MCP over stdio, one tool `desk_clock`, no network); it
+   stamps a file on `tools/list` so each F/G row says `server_loaded` (False = the row proves nothing). Every row saves
+   its exact command (`command`), with the two temp file paths replaced by placeholders and ONLY the row's own env
+   switches recorded (the inherited environment can hold account ids). Output: `data/token_probe_one_server.json`;
+   plain TOKEN_PROBE.bat is unchanged (A-E, VARIANTS[-1] still = config). Tests `tests/test_one_server_probe.py`.

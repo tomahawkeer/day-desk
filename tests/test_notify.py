@@ -79,7 +79,8 @@ def test_config_has_the_alerts_block_with_its_comment():
     a = CFG["alerts"]
     assert "_alerts" in CFG and all(w in CFG["_alerts"] for w in ("loud", "normal", "silent", "off"))
     assert a["events"] == {"buy": "silent", "sell": "silent", "stop": "loud", "target": "loud", "breaker": "loud",
-                           "desk_problem": "loud", "recap": "normal", "research": "silent"}
+                           "desk_problem": "loud", "recap": "normal", "research": "silent",
+                           "token_ceiling": "loud"}     # 11-01: token ceiling guard
     assert a["server"] == "https://ntfy.sh" and "topic" not in json.dumps(a).lower().replace("_alerts", "")
 
 

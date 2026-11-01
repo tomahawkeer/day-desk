@@ -344,8 +344,23 @@ def research_lines(r: dict) -> list[str]:
     return L
 
 
+def control_arm_lines(folder: str, end_day: str | None = None, reading: bool = False) -> list[str]:
+    """Pre-reg Addendum A4 (control arm), reported only. Never touches PASS/FAIL. In PROGRESS ONLY it prints running
+    numbers with no reading; inside a read it covers candidates up to the read's last exit day and adds the reading
+    written in A4. A failure here is printed, never allowed to stop the grade."""
+    try:
+        import decision_score
+        ca = decision_score.control_arms(folder, end_day=end_day)
+        L = decision_score.a4_lines(ca)
+        if reading:
+            L.append("  Reading (written in Addendum A4 before any data): " + decision_score.a4_reading(ca))
+        return L
+    except Exception as e:                       # the grade must still print
+        return [f"Control arm (Addendum A4): could not be computed ({e})."]
+
+
 def read_section(name: str, n_needed: int, graded: list[dict], later: int, bars: Bars,
-                 decisions: list[dict], seed: int, n_copies: int) -> list[str]:
+                 decisions: list[dict], seed: int, n_copies: int, folder: str | None = None) -> list[str]:
     g = grade(graded, bars, seed, n_copies)
     L = [f"===== {name}: first {n_needed} closed trades by exit time =====",
          f"({later} later trade(s) exist and are NOT part of this read.)", ""]
@@ -397,6 +412,8 @@ def read_section(name: str, n_needed: int, graded: list[dict], later: int, bars:
     q, miss = qqq_days(days, bars)
     L.append(f"  QQQ over the same {len(days)} trading days (open to close each day, summed): {q:+.2f}%"
              + (f" ({len(miss)} day(s) without QQQ bars)." if miss else ".") + " SPY not archived.")
+    if folder:                                    # Addendum A4 control arm, reported only (never changes the gates)
+        L += [""] + control_arm_lines(folder, end_day=days[-1] if days else None, reading=True)
     calls: dict[str, int] = {}
     for d in decisions:
         if d.get("trigger") in NOT_CLAUDE_CALLS or d.get("action") == "-":
@@ -434,6 +451,7 @@ def build_report(folder: str, seed: int = SEED, n_copies: int = N_COPIES) -> tup
               f"{stops_known} of {n} have a known stop (matched to their buy record).",
               "  (Saved bars are needed to replay each trade at random times; the stop is needed for the "
               "stop-applied comparison.)"]
+        L += [""] + control_arm_lines(folder)
         L += research_lines(r)
     else:
         L += ["Terms: P&L = profit and loss in dollars after costs. A 'copy' replays every real trade on the same "
@@ -444,7 +462,7 @@ def build_report(folder: str, seed: int = SEED, n_copies: int = N_COPIES) -> tup
                  f"Trades with saved bars: {with_bars} of {n}.")
         for k, name in reached:
             L.append("")
-            L += read_section(name, k, trades[:k], n - k, bars, decisions, seed, n_copies)
+            L += read_section(name, k, trades[:k], n - k, bars, decisions, seed, n_copies, folder)
         if nxt:
             L += ["", f"Next: {next_name} at {needed} trades ({n} so far, about "
                       f"{est if est is not None else '?'} trading days away)."]

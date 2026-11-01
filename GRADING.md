@@ -32,3 +32,28 @@ Changing the prompt, playbook, scanner or learning loop is part of the system be
 (position size, stop cap, daily loss breaker, max positions) or the cost model is an **amendment**: dated, reasoned,
 written down before it takes effect, outside market hours. `engine.py` pins the money limits and the desk pauses
 itself if they change.
+
+## Amendment A3 (Sat 2026-10-31, after trade 10, outside market hours): fill model
+- A stop or target touched late in a still-forming minute used to be missed, because that minute was marked "checked"
+  the first time it was seen. Now a minute counts as checked only once it has finished. On trades 1 to 10 this changed
+  3 trades and made the record **$5.32 worse**: the recorded fills had been kinder than honest ones.
+- Buys and Claude's sells fill at the price fetched **after** Claude answers, not before the 5 to 150 second call. A buy
+  is refused if that price is stale or already through the stop.
+- The scanner and Claude see finished minutes only.
+- Nothing else changed (cost, limits, times, the grade, the read points). Trades 1 to 10 stay as recorded, and Read 1
+  reports G1 both as recorded and re-filled on finished bars.
+- Grader ruling: random entries are drawn from 9:45 to min(15:30, 15:45 minus the hold), so every copy closes by 3:45.
+  The 95th percentile is nearest-rank, and "beats" means strictly greater.
+
+## Addendum A4 (Sat 2026-10-31 evening, before Mon 11-02): a control arm, reported only
+Does Claude's filtering beat a dumb rule on the **same** candidates? Candidates are every Claude decision (buy or pass)
+on a stock not held, from a scanner trigger, from 11-02 on. Three arms:
+- **ALL:** take every candidate.
+- **GATED:** take it only if, on the last finished minute, the close is above session VWAP **and** the stock's % move
+  since the open beats QQQ's over the same bars. Fixed here before any data; never tuned.
+- **CLAUDE:** what Claude said buy to.
+
+Every arm is scored with the same neutral trade: stop 2 typical 1-minute ranges below (max 3%), target 1.5x risk, out
+by 3:45, 0.01% per side. Reported: n, mean R, target-first %, a 90% interval bootstrapped over days, CLAUDE minus GATED
+with its interval, and the overlap. It never changes PASS/FAIL. Prediction on record: CLAUDE minus GATED straddles 0
+at Read 1 (~75%).
