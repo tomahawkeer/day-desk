@@ -62,7 +62,12 @@ N_BOOT = 10000
 READS = [(60, "Read 1"), (120, "Read 2")]
 RESEARCH_NEEDED = 40
 STRESS_COST = 0.0005
-FIRST_ENTRY = 9 * 60 + 45      # 9:45
+FIRST_ENTRY = 9 * 60 + 45      # 9:45 (trades entered before A5_DAY)
+# Amendment A5 (2026-11-06, tomahawkeer): from Mon 11-09 the scanner starts at 9:35, so a trade entered on or after A5_DAY
+# draws its random-timing copies from 9:35, the first minute the desk could act that day. Earlier trades keep 9:45,
+# because the desk could not act before 9:45 on those days. Written before any 9:35 trade existed.
+A5_DAY = "2026-11-09"
+FIRST_ENTRY_A5 = 9 * 60 + 35   # 9:35
 LAST_ENTRY_CAP = 15 * 60 + 30  # 15:30
 CLOSE_OUT = 15 * 60 + 45       # 15:45
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -171,12 +176,19 @@ def hold_minutes(tr: dict) -> int:
     return max(1, round((tr["exit_t"] - tr["entry_t"]) / 60))
 
 
-def entry_window(hold: int) -> tuple[int, int]:
-    """Ruling 1: entries run 9:45 .. min(15:30, 15:45 - hold); if empty, 9:45 only."""
+def first_entry(day: str | None = None) -> int:
+    """9:45 for trades before A5_DAY (or when no day is given), 9:35 from A5_DAY on (Amendment A5)."""
+    return FIRST_ENTRY_A5 if day and day >= A5_DAY else FIRST_ENTRY
+
+
+def entry_window(hold: int, day: str | None = None) -> tuple[int, int]:
+    """Ruling 1: entries run first_entry(day) .. min(15:30, 15:45 - hold); if empty, first_entry(day) only.
+    first_entry is 9:45 before 2026-11-09 and 9:35 from then on (Amendment A5)."""
+    first = first_entry(day)
     last = min(LAST_ENTRY_CAP, CLOSE_OUT - hold)
-    if last < FIRST_ENTRY:
-        last = FIRST_ENTRY
-    return FIRST_ENTRY, last
+    if last < first:
+        last = first
+    return first, last
 
 
 def copy_pnl(by_min: dict, m: int, hold: int, shares: int, stop_dist: float | None = None) -> float:
@@ -210,7 +222,7 @@ def run_copies(trades: list[dict], bars: Bars, seed: int = SEED, n: int = N_COPI
         a = s = 0.0
         for tr, bm in usable:
             h = hold_minutes(tr)
-            lo, hi = entry_window(h)
+            lo, hi = entry_window(h, et_day(tr["entry_t"]))
             m = rng.randint(lo, hi)
             a += copy_pnl(bm, m, h, tr["shares"])
             s += copy_pnl(bm, m, h, tr["shares"], tr.get("stop_dist"))
@@ -588,6 +600,9 @@ def selftest() -> str:
         # 4. window ruling
         ok(entry_window(5) == (585, 930) and entry_window(60) == (585, 885) and entry_window(400) == (585, 585),
            "entry window = 9:45 .. min(15:30, 15:45 - hold), 9:45 only if empty")
+        ok(entry_window(5, "2026-11-06") == (585, 930) and entry_window(5, "2026-11-09") == (575, 930)
+           and entry_window(400, "2026-11-10") == (575, 575),
+           "A5: copies start 9:45 for trades before 11-09, 9:35 from 11-09")
         # 5. stop fill rule (gap through fills at the open)
         bm = {600: {"o": 100, "h": 100, "l": 100, "c": 100}, 601: {"o": 99.5, "h": 99.6, "l": 99.4, "c": 99.5},
               602: {"o": 97.0, "h": 97.2, "l": 96.5, "c": 97.0}, 603: {"o": 97, "h": 97, "l": 97, "c": 97}}

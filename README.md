@@ -13,6 +13,12 @@ pre-registered test (see [GRADING.md](GRADING.md)): it must be profitable after 
 random-timing copies of its own trades. Until then, nothing here is evidence that it works. This is not
 financial advice.
 
+**Progress (Sun 2026-11-08):** 12 of the 60 closed trades Read 1 needs, 1 win, **−$115.63** (−1.2%) after costs, no
+verdict (by design). For context, the Nasdaq-100 ETF (QQQ) fell 5.9% in the week of 11-02 and the desk, long-only, lost
+$38 that week. Pace was the problem (0, 1, 0, 1, 0 trades that week), so from Mon 11-09 the desk scans from 9:35 instead
+of 9:45 ([Amendment A5](GRADING.md)). A pre-registered weekend test of checking open trades every 10 minutes instead of 30
+changed nothing on any of the 12 trades. Only one trade had ever been up a full unit of risk.
+
 Things that may be useful to others even if the trading doesn't pan out:
 - `grade_read.py`: the random-timing null (same stock, same day, same size, same holding time, random entry).
 - `brain.py` / `token_probe.py`: running `claude -p` on a subscription at about 600 input tokens per call instead

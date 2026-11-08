@@ -57,3 +57,20 @@ Every arm is scored with the same neutral trade: stop 2 typical 1-minute ranges 
 by 3:45, 0.01% per side. Reported: n, mean R, target-first %, a 90% interval bootstrapped over days, CLAUDE minus GATED
 with its interval, and the overlap. It never changes PASS/FAIL. Prediction on record: CLAUDE minus GATED straddles 0
 at Read 1 (~75%).
+
+## Amendment A5 (Fri 2026-11-06 evening, after trade 12, live Mon 11-09): trade the open
+tomahawkeer: "The busiest times of trading days are the first and last 30 min of the session. It's obvious why trades
+are sparse if it won't trade before 10am." In practice the desk traded 10:00 to 3:30: the scanner started at 9:45 and a
+rule the desk wrote for itself (R9) blocked buys before 10:00 on data days. That week gave 0, 1, 0, 1, 0 trades.
+- **Playbook R9:** "no buys before 10:00 on data days" became "no buys within 2 minutes of a scheduled data release".
+  (A playbook edit; the nightly review may change it again like any rule.)
+- **Scanner start 9:45 → 9:35, `min_bars` 15 → 5.** Without the second change nothing could fire before 9:45 anyway.
+  In practice only the flush-bounce trigger (and rarely breakout) can fire before 9:46; momentum needs 16 minutes of
+  bars and VWAP reclaim 30. The first 5 minutes stay closed (widest spreads, least reliable prints on a free feed).
+- **G2:** trades entered on or after 2026-11-09 draw their random copies from **9:35**; earlier trades keep 9:45, the
+  first minute the desk could act on those days (`grade_read.entry_window(hold, day)`, pinned by tests).
+- Unchanged: money limits, cost, no buys after 3:30, flat by 3:45, G1, the read points, A4, and the research grade
+  (still 9:45 → 3:45, `pick_grade_start_minute`).
+- Read 1 reports before/after 11-09 separately, plus the 9:35-10:00 trades on their own line (reported, not graded).
+- Predictions on record: average trades/day rise above 1 over the first 5 days after it (~55%); the first ten
+  9:35-10:00 trades are net negative (~65%).
