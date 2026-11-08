@@ -30,7 +30,7 @@ A test pins it.
 3. **Every threshold is a named, commented setting in config.json.** No magic numbers in logic.
 4. **Every Claude call is logged** in `data/decisions.jsonl` with the trigger, the answer and the result, including
    refusals and errors.
-5. Run `TEST.bat` after any change (252 tests as of the 11-01 Sunday build). Run `REHEARSAL.bat` too (rule 23).
+5. Run `TEST.bat` after any change (256 tests as of the 11-06 A5 build). Run `REHEARSAL.bat` too (rule 23).
 6. yfinance is unofficial: any feed failure must show on the page (red pill) and be retried, never be silent.
 7. **Never add an API key or any separately billed service.** tomahawkeer (10-28): "im not getting charged additionally and separately".
 8. **It learns from its own record (tomahawkeer 10-28: "if you use a strategy to test and it works or doesn't work, you record the
@@ -188,3 +188,9 @@ A test pins it.
    its exact command (`command`), with the two temp file paths replaced by placeholders and ONLY the row's own env
    switches recorded (the inherited environment can hold account ids). Output: `data/token_probe_one_server.json`;
    plain TOKEN_PROBE.bat is unchanged (A-E, VARIANTS[-1] still = config). Tests `tests/test_one_server_probe.py`.
+
+29. **Trade the open (11-06, pre-reg Amendment A5, live 11-09).** `scanner.start_minute` 575 (9:35), `min_bars` 5 (the
+   two move together: min_bars 15 alone kept the desk silent until 9:45). Playbook R9 is now "no buys within 2 minutes of a
+   scheduled data release". `grade_read.entry_window(hold, day)`: copies start 9:35 for trades from `A5_DAY` 2026-11-09,
+   9:45 before. Research picks are still graded 9:45 → 3:45 (`pick_grade_start_minute` 585). Tests: `test_a5_*` in
+   test_day_desk.py, `test_entry_window_a5`.

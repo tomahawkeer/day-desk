@@ -329,7 +329,7 @@ class Desk:
 
     def score_picks(self, day: str, bars: dict, now: float) -> None:
         """Once a day at the close-out: one line per pick in data/pick_results.jsonl.
-        Graded window = 9:45 (scanner start, the first minute the desk could act) to 3:45 (close-out),
+        Graded window = 9:45 (config pick_grade_start_minute; fixed when A5 moved the scanner to 9:35) to 3:45 (close-out),
         measured against QQQ over the same window. Open-to-close is reported too."""
         if self.book.s.get("picks_scored_day") == day:
             return
@@ -340,7 +340,7 @@ class Desk:
         if not r or not r.get("picks"):
             return
         base = datetime.fromisoformat(day + "T00:00:00").replace(tzinfo=ET).timestamp()
-        t_in = base + self.cfg["scanner"]["start_minute"] * 60
+        t_in = base + self.cfg.get("pick_grade_start_minute", 585) * 60      # 9:45 always (A5 kept it fixed)
         t_out = base + self.cfg["flatten_minute"] * 60
 
         def window(b):

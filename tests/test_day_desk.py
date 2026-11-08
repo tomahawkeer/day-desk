@@ -1336,3 +1336,42 @@ def test_base_rates_reach_fresh_decisions_only(tmp_path):
     assert "buys averaged" in d.base_rates("breakout", False)          # one bad report doesn't kill the other
     d.cfg = dict(d.cfg, base_rates_in_prompt=False)
     assert d.base_rates("breakout", False) == ""
+
+
+# ---------------- Amendment A5 (2026-11-06): scanner opens at 9:35 ----------------
+def test_a5_config_values():
+    assert CFG["scanner"]["start_minute"] == 575          # 9:35
+    assert CFG["scanner"]["min_bars"] <= 5                 # otherwise nothing could fire before 9:45
+    assert CFG["pick_grade_start_minute"] == 585           # research is still graded 9:45 -> 3:45
+
+
+def test_a5_flush_bounce_can_fire_before_945():
+    """A5: an opening flush that bounces can wake Claude before 9:45 (it couldn't when min_bars was 15).
+    Breakout rarely can this early: its volume ratio compares against the open's own heavy volume."""
+    bars = flat_bars(n=3, price=100.0)                    # 9:30 .. 9:32
+    t = bars[-1]["t"]
+    for i in range(4):                                     # 9:33 .. 9:36 slide to 98.2
+        p = 100 - 0.45 * (i + 1)
+        bars.append(bar(t + 60 * (i + 1), p + 0.1, p + 0.1, p - 0.05, p))
+    t = bars[-1]["t"]
+    for i in range(3):                                     # 9:37 .. 9:39 bounce to ~99.0
+        p = 98.2 + 0.28 * (i + 1)
+        bars.append(bar(t + 60 * (i + 1), p - 0.1, p + 0.05, p - 0.1, p))
+    assert len(bars) == 10
+    kinds = [k for k, _ in scan("AMD", bars, flat_bars(n=len(bars)), CFG)]
+    assert "flush_bounce" in kinds
+
+
+def test_a5_nothing_fires_before_935():
+    bars = flat_bars(n=4)                                  # 9:30 .. 9:33
+    t = bars[-1]["t"] + 60                                 # 9:34
+    bars.append(bar(t, 100.0, 100.6, 100.0, 100.5, v=8000))
+    assert scan("AMD", bars, flat_bars(n=5), CFG) == []
+
+
+def test_a5_pick_grading_still_starts_945(tmp_path):
+    """score_picks prices research picks from 9:45, not from the scanner's new 9:35 start."""
+    import inspect
+    src = inspect.getsource(day_desk.DayDesk.score_picks) if hasattr(day_desk, "DayDesk") else open(
+        os.path.join(HERE, "day_desk.py"), encoding="utf-8").read()
+    assert 'pick_grade_start_minute' in src

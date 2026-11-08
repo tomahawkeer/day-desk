@@ -157,3 +157,12 @@ def test_grader_and_desk_agree_on_what_is_not_a_claude_call():
     import day_desk
     import grade_read
     assert grade_read.NOT_CLAUDE_CALLS == day_desk.NOT_CLAUDE_CALLS
+
+
+# ---------------- Amendment A5: copies start at 9:35 for trades from 2026-11-09
+def test_entry_window_a5():
+    assert gr.entry_window(5, "2026-11-06") == (585, 930)   # before A5: 9:45
+    assert gr.entry_window(5, "2026-11-09") == (575, 930)   # from A5: 9:35
+    assert gr.entry_window(5) == (585, 930)                 # no day given: the original 9:45
+    assert gr.entry_window(500, "2026-11-12") == (575, 575)
+    assert gr.first_entry("2026-11-08") == 585 and gr.first_entry("2026-11-09") == 575
